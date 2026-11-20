@@ -41,6 +41,7 @@ button,label.btn{padding:10px 12px}#wave{height:90px}}
 
 <div class="row"><label class="btn">Importer une voix<input id="file" type="file" accept="audio/*" hidden></label>
 <button id="rec" class="sec">● Prise brute au micro</button></div>
+<div class="row" style="margin-top:8px"><span class="hint">Entrée :</span><select id="mic"><option value="">Micro par défaut</option></select><button class="sec" id="micScan">Détecter ma table / mon interface</button></div>
 <div id="recbox" class="box">
  <div id="recmsg">Prépare-toi…</div>
  <div class="meter"><div id="meter"></div></div>
@@ -215,7 +216,7 @@ $("file").onchange=async e=>{const f=e.target.files[0];if(f){stop();try{await lo
 // --- Prise brute guidée
 let recStream,recAn,recRaf,recStart,recPeak=0;
 $("rec").onclick=async()=>{if(mrec&&mrec.state==="recording"){mrec.stop();return}
- try{ensure();await ctx.resume();recStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ try{ensure();await ctx.resume();const dev=$("mic").value;recStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:dev?{exact:dev}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});listMics();
  const s=ctx.createMediaStreamSource(recStream);recAn=ctx.createAnalyser();recAn.fftSize=2048;s.connect(recAn);
  chunks=[];mrec=new MediaRecorder(recStream);mrec.ondataavailable=e=>chunks.push(e.data);
  mrec.onstop=async()=>{cancelAnimationFrame(recRaf);recStream.getTracks().forEach(t=>t.stop());$("recbox").classList.remove("show");$("rec").textContent="● Prise brute au micro";
@@ -228,6 +229,12 @@ function recMeter(){const d=new Float32Array(recAn.fftSize);recAn.getFloatTimeDo
  const msg=$("recmsg");if(recPeak>.97)msg.textContent="Trop fort — le son sature : recule un peu ou baisse le gain du micro.";
  else if(rms<.003&&recPeak<.05)msg.textContent="Très faible — rapproche-toi du micro ou monte son gain.";
  else msg.textContent="Niveau correct — chante !";$("rectime").textContent=fmt((performance.now()-recStart)/1000);recRaf=requestAnimationFrame(recMeter)}
+async function listMics(){try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind==="audioinput"),sel=$("mic"),v=sel.value;
+ sel.innerHTML='<option value="">Micro par défaut</option>'+d.filter(x=>x.deviceId&&x.deviceId!=="default").map((x,i)=>'<option value="'+x.deviceId+'">'+(x.label||"Entrée "+(i+1))+'</option>').join("");
+ sel.value=[...sel.options].some(o=>o.value===v)?v:"";localStorage.getItem("msv-mic")&&[...sel.options].some(o=>o.value===localStorage.getItem("msv-mic"))&&!v&&(sel.value=localStorage.getItem("msv-mic"));return d.length}catch(e){return 0}}
+$("mic").onchange=()=>localStorage.setItem("msv-mic",$("mic").value);
+$("micScan").onclick=async()=>{try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());const n=await listMics();st(n+" entrée(s) audio détectée(s). Choisis ta table de mixage dans la liste.")}catch(e){st("Accès aux entrées refusé : "+e.message)}};
+listMics();
 // --- Test « comme chez l’opticien »
 const T={n:10};
 function tParams(c,b){return{...NEUTRAL,corps:c,brill:b}}
