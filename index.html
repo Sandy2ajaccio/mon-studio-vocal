@@ -66,7 +66,7 @@ De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01
 <div class="box" id="test">
  <div class="row" style="justify-content:space-between"><b id="tStep">Choix 1 / 10</b><button class="sec" id="tStop">Arrêter le test</button></div>
  <div class="progress" style="margin:8px 0"><div id="tProg"></div></div>
- <p class="hint" style="margin:0">Écoute A puis B (autant de fois que tu veux), puis choisis.</p>
+ <p class="hint" style="margin:0">Écoute A puis B (autant de fois que tu veux), puis choisis. <b>Tu n’entends pas de différence ? Appuie sur « Pareil » : l’écart sera agrandi au tour suivant.</b> Avec un casque ou des écouteurs, c’est bien plus net que sur le haut-parleur du téléphone.</p>
  <div class="pick"><button class="sec" id="tA">▶ Écouter A</button><button class="sec" id="tB">▶ Écouter B</button></div>
  <div class="row"><button id="pA">A me ressemble</button><button id="pB">B me ressemble</button><button class="sec" id="pS">Pareil</button><button class="sec" id="tO">Écouter l’original</button></div>
 </div>
@@ -77,8 +77,8 @@ De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01
 
 <div class="adv">
 <h2>Mon timbre <label><input type="checkbox" class="fx" data-fx="timbre" checked> actif</label></h2>
-<div class="g-timbre"><div class="sl">Corps<input type="range" id="corps" min="-8" max="8" step=".5"><span></span></div>
-<div class="sl">Brillance<input type="range" id="brill" min="-8" max="8" step=".5"><span></span></div></div>
+<div class="g-timbre"><div class="sl">Corps<input type="range" id="corps" min="-10" max="10" step=".5"><span></span></div>
+<div class="sl">Brillance<input type="range" id="brill" min="-10" max="10" step=".5"><span></span></div></div>
 <h2>Ma voix intérieure <label><input type="checkbox" class="fx" data-fx="inner" checked> actif</label></h2>
 <div class="g-inner"><div class="sl">Intensité<input type="range" id="inner" min="0" max="100"><span></span></div>
 <p class="hint">Plus de rondeur dans les graves, aigus adoucis.</p></div>
@@ -140,17 +140,17 @@ function update(){ids.forEach(lab);lab("amt");document.querySelectorAll(".fx").f
 function impulse(c,len){const r=c.sampleRate,n=Math.floor(r*len),b=c.createBuffer(2,n,r);for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}return b}
 function bq(c,type,f,Q){const b=c.createBiquadFilter();b.type=type;b.frequency.value=f;if(Q)b.Q.value=Q;return b}
 function chain(c,dest){const n={};n.inp=c.createGain();
- n.tLow=bq(c,"lowshelf",160);n.tMid=bq(c,"peaking",300,.7);n.tHi=bq(c,"highshelf",5000);
+ n.tLow=bq(c,"lowshelf",200);n.tMid=bq(c,"peaking",400,.6);n.tHi=bq(c,"highshelf",3500);n.tPr=bq(c,"peaking",2500,.8);
  n.iLow=bq(c,"lowshelf",150);n.iMid=bq(c,"peaking",320,.7);n.iHi=bq(c,"highshelf",6000);
  n.low=bq(c,"lowshelf",250);n.mid=bq(c,"peaking",3500,.8);n.hi=bq(c,"highshelf",9000);
  n.comp=c.createDynamicsCompressor();n.mk=c.createGain();n.out=c.createGain();n.rv=c.createConvolver();n.rvG=c.createGain();
  n.dl=c.createDelay(2);n.fb=c.createGain();n.dlG=c.createGain();n.byp=c.createGain();n.match=c.createGain();n.dryC=c.createGain();
- let x=n.inp;[n.tLow,n.tMid,n.tHi,n.iLow,n.iMid,n.iHi,n.low,n.mid,n.hi].forEach(f=>{x.connect(f);x=f});
+ let x=n.inp;[n.tLow,n.tMid,n.tHi,n.tPr,n.iLow,n.iMid,n.iHi,n.low,n.mid,n.hi].forEach(f=>{x.connect(f);x=f});
  x.connect(n.comp).connect(n.mk);x.connect(n.dryC).connect(n.mk);
  n.mk.connect(n.out);n.mk.connect(n.rv).connect(n.rvG).connect(n.out);n.mk.connect(n.dl);n.dl.connect(n.fb).connect(n.dl);n.dl.connect(n.dlG).connect(n.out);
  n.out.connect(n.match).connect(dest);n.inp.connect(n.byp).connect(dest);n.lastLen=0;return n}
 function apply(n,v,c,isOrig,m){
- n.tLow.gain.value=v.corps*.5;n.tMid.gain.value=v.corps;n.tHi.gain.value=v.brill;
+ n.tLow.gain.value=v.corps*.8;n.tMid.gain.value=v.corps;n.tHi.gain.value=v.brill;n.tPr.gain.value=v.brill*.5;
  const t=v.inner/100;n.iLow.gain.value=3*t;n.iMid.gain.value=5*t;n.iHi.gain.value=-4.5*t;
  n.low.gain.value=v.warm;n.hi.gain.value=v.clar*.5;n.mid.gain.value=v.clar*.6;
  const k=v.comp/100,on=k>0.001;n.comp.threshold.value=-10-k*25;n.comp.ratio.value=1+k*5;n.comp.attack.value=.01;n.comp.release.value=.2;
@@ -239,7 +239,7 @@ listMics();
 const T={n:10};
 function tParams(c,b){return{...NEUTRAL,corps:c,brill:b}}
 async function tRound(){const dim=T.i%2===0?"corps":"brill",s=T.step[dim];
- const lo={...T.est},hi={...T.est};lo[dim]=Math.max(-8,T.est[dim]-s);hi[dim]=Math.min(8,T.est[dim]+s);
+ const lo={...T.est},hi={...T.est};lo[dim]=Math.max(-10,T.est[dim]-s);hi[dim]=Math.min(10,T.est[dim]+s);if(hi[dim]-lo[dim]<2*s){if(lo[dim]===-10)hi[dim]=Math.min(10,lo[dim]+2*s);else lo[dim]=Math.max(-10,hi[dim]-2*s)}
  T.dim=dim;T.swap=Math.random()<.5;T.A=T.swap?hi:lo;T.B=T.swap?lo:hi;
  $("tStep").textContent="Choix "+(T.i+1)+" / "+T.n;$("tProg").style.width=(T.i/T.n*100)+"%";
  ["tA","tB","pA","pB","pS","tO"].forEach(i=>$(i).disabled=true);st("Préparation des deux versions…");
@@ -249,7 +249,7 @@ function tListen(w){["tA","tB","tO"].forEach(i=>$(i).classList.remove("on"));
  if(w==="O"){$("tO").classList.add("on");override=tParams(0,0);setOrig(true)}
  else{$("t"+w).classList.add("on");const p=T[w];override=tParams(p.corps,p.brill);orig=false;$("ab").textContent="Entendu : test "+w;$("ab").classList.remove("orig");apply(nodes,override,ctx,false,w==="A"?T.gA:T.gB)}
  if(!playing)play()}
-function tPick(w){const dim=T.dim;if(w==="S"){T.step[dim]*=.5}else{T.est[dim]=T[w][dim];T.step[dim]*=.65}
+function tPick(w){const dim=T.dim;if(w==="S"){T.step[dim]=Math.min(8,T.step[dim]*1.5)}else{T.est[dim]=T[w][dim];T.step[dim]=Math.max(2.5,T.step[dim]*.75)}
  T.i++;if(T.i>=T.n)tEnd();else tRound()}
 function tEnd(){override=null;$("test").classList.remove("show");$("testIntro").style.display="";
  const c=Math.round(T.est.corps*2)/2,b=Math.round(T.est.brill*2)/2;
@@ -257,7 +257,7 @@ function tEnd(){override=null;$("test").classList.remove("show");$("testIntro").
  cur="Mon timbre";$("amt").value=100;setVals(P[cur]);renderPresets();setOrig(false);
  const d=v=>(v>0?"+":"")+v+" dB";st("Test terminé. Préréglage « Mon timbre » créé : corps "+d(c)+", brillance "+d(b)+". Compare-le avec l’original.")}
 $("testStart").onclick=()=>{if(!buf)return;if(!$("loopOn").checked){const s=offsetNow();$("la").value=fmt(s);$("lb").value=fmt(Math.min(buf.duration,s+20));$("loopOn").checked=true;loopChanged()}
- T.i=0;T.est={corps:0,brill:0};T.step={corps:4,brill:4};$("testIntro").style.display="none";$("test").classList.add("show");tRound()};
+ T.i=0;T.est={corps:0,brill:0};T.step={corps:6,brill:6};$("testIntro").style.display="none";$("test").classList.add("show");tRound()};
 $("tA").onclick=()=>tListen("A");$("tB").onclick=()=>tListen("B");$("tO").onclick=()=>tListen("O");
 $("pA").onclick=()=>tPick("A");$("pB").onclick=()=>tPick("B");$("pS").onclick=()=>tPick("S");
 $("tStop").onclick=()=>{override=null;$("test").classList.remove("show");$("testIntro").style.display="";setOrig(false);update();st("Test arrêté.")};
