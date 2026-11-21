@@ -43,7 +43,7 @@ label.btn.sec{background:#eee6dd;color:#2b2622}
 @media (max-width:560px){body{padding:8px}.app{padding:14px}.sl{grid-template-columns:96px 1fr 52px;font-size:.9rem}
 button,label.btn{padding:10px 12px}#wave{height:90px}}
 </style></head><body><div class="app">
-<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.4</span></p>
+<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.5</span></p>
 <div class="tabs"><button id="mSimple" class="act">Mode simple</button><button id="mAdv">Mode avancé</button></div>
 
 <div class="row"><label class="btn">Importer une voix ou un morceau<input id="file" type="file" accept="audio/*" hidden></label>
@@ -177,33 +177,46 @@ function update(){ids.forEach(lab);lab("amt");document.querySelectorAll(".fx").f
 // - aigus qui s'éteignent plus vite que les graves (pierre, air) ;
 // - énergie qui grandit avec la taille du lieu (normalisation automatique désactivée).
 // Aléatoire « fixe » : l'écoute et l'export sonnent pareil. La voix directe n'est jamais modifiée.
+const IRC=new Map();function irFor(c,len){const k=c.sampleRate+"|"+len;let b=IRC.get(k);if(!b){b=impulse(c,len);if(IRC.size>12)IRC.clear();IRC.set(k,b)}
+ try{return b}catch(e){return impulse(c,len)}}
 function impulse(c,len){const r=c.sampleRate,n=Math.floor(r*len),b=c.createBuffer(2,n,r),
  atk=0.003+0.012*len,kEnd=Math.max(0.1,0.75-0.095*len),erSpan=Math.min(0.22,0.025+0.03*len),E=0.8*Math.pow(len,0.45);
  for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);let seed=9871+ch*4513,y=0;const rnd=()=>{seed=(seed*1103515245+12345)>>>0;return seed/2147483648-1};
   for(let i=0;i<n;i++){const t=i/r,k=0.9-(0.9-kEnd)*Math.min(1,i/n*1.5);y+=k*(rnd()-y);d[i]=y/Math.sqrt(k)*Math.exp(-6.9*t/len)*(1-Math.exp(-t/atk))}
-  let et=0;for(let i=0;i<n;i++)et+=d[i]*d[i];const gt=Math.sqrt(0.75/et);for(let i=0;i<n;i++)d[i]*=gt;
+  let et=0;for(let i=0;i<n;i++)et+=d[i]*d[i];const gt=Math.sqrt(0.88/et);for(let i=0;i<n;i++)d[i]*=gt;
   // premières réflexions : ~25 % de l'énergie, différentes à gauche et à droite
-  const NR=14;let er=[],ee=0;for(let j=0;j<NR;j++){const t=erSpan*Math.pow((j+1+0.6*rnd())/NR,1.3),a=Math.exp(-3*t/erSpan)*(rnd()<0?-1:1);er.push([Math.floor(t*r),a]);ee+=a*a}
-  const ge=Math.sqrt(0.25/ee);er.forEach(([p,a])=>{if(p<n)d[p]+=a*ge});
+  const NR=24;let er=[],ee=0;for(let j=0;j<NR;j++){const t=erSpan*Math.pow((j+1+0.6*rnd())/NR,1.3),a=Math.exp(-3*t/erSpan)*(rnd()<0?-1:1);er.push([Math.floor(t*r),a]);ee+=a*a}
+  const ge=Math.sqrt(0.12/ee);er.forEach(([p,a])=>{if(p<n)d[p]+=a*ge});
   for(let i=0;i<n;i++)d[i]*=Math.sqrt(E)}
  return b}
 function bq(c,type,f,Q){const b=c.createBiquadFilter();b.type=type;b.frequency.value=f;if(Q)b.Q.value=Q;return b}
 // Articulation : petit module audio (AudioWorklet) qui
 //  1) fait ressortir le début des syllabes (consonnes) en suivant l'enveloppe de la voix ;
 //  2) baisse la réverbération et l'écho pendant que tu chantes, puis les laisse revenir entre les phrases.
-const WK_SRC=`class Diction extends AudioWorkletProcessor{
- static get parameterDescriptors(){return[{name:"amt",defaultValue:0,minValue:0,maxValue:1},{name:"ref",defaultValue:.1,minValue:1e-5,maxValue:1}]}
- constructor(){super();this.f=0;this.s=0;this.k=0;this.g=1;this.d=1;const r=sampleRate;
-  this.rf=Math.exp(-1/(.015*r));this.cs=1-Math.exp(-1/(.12*r));this.ka=1-Math.exp(-1/(.01*r));this.kr=1-Math.exp(-1/(.3*r));this.sm=1-Math.exp(-1/(.002*r))}
- process(inp,out,p){const v=inp[0],w=inp[1],vo=out[0],wo=out[1],a=p.amt[0],ref=p.ref[0],n=(vo[0]||[]).length;
-  for(let i=0;i<n;i++){let x=0;for(let c=0;c<v.length;c++)x+=Math.abs(v[c][i]);x/=Math.max(1,v.length);
-   this.f=x>this.f?x:this.f*this.rf;this.s+=(x-this.s)*this.cs;
-   let gt=Math.min(3,Math.max(1,this.f/(this.s+1e-5)));gt=Math.pow(gt,.55*a);this.g+=(gt-this.g)*this.sm;
-   this.k+=(x-this.k)*(x>this.k?this.ka:this.kr);const lvl=Math.min(1,this.k/(ref*.6+1e-6));const dt=1-a*.72*lvl;this.d+=(dt-this.d)*this.sm;
-   for(let c=0;c<vo.length;c++){const src=v[Math.min(c,v.length-1)];vo[c][i]=src?src[i]*this.g:0}
-   for(let c=0;c<wo.length;c++){const src=w&&w.length?w[Math.min(c,w.length-1)]:null;wo[c][i]=src?src[i]*this.d:0}}
+const WK_SRC=`class Voix extends AudioWorkletProcessor{
+ static get parameterDescriptors(){const P=(n,d,a,b)=>({name:n,defaultValue:d,minValue:a,maxValue:b,automationRate:"k-rate"});
+  return[P("amt",0,0,1),P("ref",.1,1e-5,1),P("comp",0,0,1),P("thr",-20,-80,0),P("ratio",1,1,20),P("mk",1,0,8)]}
+ constructor(){super();const r=sampleRate,B=16,c=t=>1-Math.exp(-B/(t*r));
+  this.e2=0;this.gcdB=0;this.f=0;this.s=0;this.k=0;this.gt=1;this.dk=1;
+  this.cE=1-Math.exp(-1/(.01*r));this.cA=c(.02);this.cR=c(.25);this.fR=Math.exp(-B/(.04*r));this.cS=c(.3);this.kA=c(.04);this.kR=c(.45);this.cT=c(.004)}
+ process(inp,out,p){const v=inp[0]||[],w=inp[1]||[],vo=out[0],wo=out[1],n=vo[0].length,B=16,
+  a=p.amt[0],ref=p.ref[0],cmp=p.comp[0],thr=p.thr[0],ra=p.ratio[0],mk=p.mk[0],knee=6;
+  if(!v.length){for(const ch of vo)ch.fill(0);for(const ch of wo)ch.fill(0);return true}
+  for(let b0=0;b0<n;b0+=B){let pk=0;
+   for(let i=b0;i<b0+B;i++){let x=0;for(let c=0;c<v.length;c++){const q=Math.abs(v[c][i]);if(q>x)x=q}this.e2+=(x*x-this.e2)*this.cE;if(x>pk)pk=x}
+   // compresseur (RMS, genou doux, sans gain automatique)
+   let gr=0;if(cmp>0){const L=10*Math.log10(this.e2+1e-12),o=L-thr,s=1-1/ra;gr=o<=-knee/2?0:o>=knee/2?o*s:s*(o+knee/2)*(o+knee/2)/(2*knee)}
+   const tg=-gr;this.gcdB+=(tg-this.gcdB)*(tg<this.gcdB?this.cA:this.cR);
+   // articulation : attaques des syllabes, sans suivre le vibrato
+   this.f=pk>this.f?pk:this.f*this.fR;this.s+=(pk-this.s)*this.cS;
+   const rr=this.f/(this.s+1e-6),tgt=1+a*.6*Math.min(1,Math.max(0,(rr-1.3)/1.2));this.gt+=(tgt-this.gt)*this.cT;
+   // réverbération qui s'efface pendant le chant, revient entre les phrases
+   this.k+=(pk-this.k)*(pk>this.k?this.kA:this.kR);const lv=Math.min(1,this.k/(ref*.8+1e-6)),dt=1-a*.6*lv;this.dk+=(dt-this.dk)*this.cT;
+   const g=Math.pow(10,this.gcdB/20)*mk*this.gt,d=this.dk;
+   for(let c=0;c<vo.length;c++){const sv=v[Math.min(c,v.length-1)],o=vo[c];for(let i=b0;i<b0+B;i++)o[i]=sv[i]*g}
+   for(let c=0;c<wo.length;c++){const o=wo[c];if(!w.length){o.fill(0,b0,b0+B);continue}const sw=w[Math.min(c,w.length-1)];for(let i=b0;i<b0+B;i++)o[i]=sw[i]*d}}
   return true}}
-registerProcessor("diction",Diction);`;
+registerProcessor("voix",Voix);`;
 const WK_URL=URL.createObjectURL(new Blob([WK_SRC],{type:"application/javascript"}));
 const wkOK=new WeakSet();
 async function prepWK(c){if(wkOK.has(c))return true;try{await c.audioWorklet.addModule(WK_URL);wkOK.add(c);return true}catch(e){return false}}
@@ -214,10 +227,10 @@ function chain(c,dest){const n={};n.inp=c.createGain();
  n.comp=c.createDynamicsCompressor();n.mk=c.createGain();n.out=c.createGain();n.rv=c.createConvolver();n.rv.normalize=false;n.rvG=c.createGain();n.pd=c.createDelay(1);n.rvHp=bq(c,"highpass",180,.7);
  n.dl=c.createDelay(2);n.fb=c.createGain();n.dlG=c.createGain();n.byp=c.createGain();n.match=c.createGain();n.dryC=c.createGain();
  let x=n.inp;[n.tLow,n.tMid,n.tHi,n.tPr,n.iLow,n.iMid,n.iPr,n.iHi,n.low,n.mid,n.hi].forEach(f=>{x.connect(f);x=f});
- x.connect(n.comp).connect(n.mk);x.connect(n.dryC).connect(n.mk);
+ x.connect(n.dryC).connect(n.mk);n.useWK=wkOK.has(c);if(!n.useWK)x.connect(n.comp);n.compOn=false;
  n.mk.connect(n.pd).connect(n.rvHp).connect(n.rv).connect(n.rvG);n.mk.connect(n.dl);n.dl.connect(n.fb).connect(n.dl);n.dl.connect(n.dlG);
  n.rvLp=bq(c,"lowpass",6500,.7);n.rvG.connect(n.rvLp);n.wet=c.createGain();n.rvLp.connect(n.wet);n.dlG.connect(n.wet);
- n.w=null;if(wkOK.has(c)){try{n.w=new AudioWorkletNode(c,"diction",{numberOfInputs:2,numberOfOutputs:2,outputChannelCount:[2,2]})}catch(e){n.w=null}}
+ n.w=null;if(wkOK.has(c)){try{n.w=new AudioWorkletNode(c,"voix",{numberOfInputs:2,numberOfOutputs:2,outputChannelCount:[2,2]})}catch(e){n.w=null}}
  if(n.w){n.mk.connect(n.w,0,0);n.wet.connect(n.w,0,1);n.w.connect(n.out,0);n.w.connect(n.out,1)}else{n.mk.connect(n.out);n.wet.connect(n.out)}
  n.out.connect(n.match).connect(dest);n.inp.connect(n.byp).connect(dest);n.lastLen=0;return n}
 function apply(n,v,c,isOrig,m){
@@ -228,19 +241,21 @@ function apply(n,v,c,isOrig,m){
  if(n.w){n.w.parameters.get("amt").value=(v.artic||0)/100;n.w.parameters.get("ref").value=Math.pow(10,SIG/20)}
  // Régularité : seuil calé sur le niveau réel de la prise (SIG), pour agir quel que soit le volume d'enregistrement
  const k=v.comp/100,on=k>0.001;n.comp.threshold.value=Math.max(-60,Math.min(0,SIG+6-k*22));n.comp.ratio.value=1+k*5;n.comp.attack.value=.02;n.comp.release.value=.25;
- n.comp.knee.value=on?12:0;n.dryC.gain.value=on?0:1;n.mk.gain.value=on?Math.pow(10,k*7/20):1;
+ if(n.w){// compresseur maison (dans le module audio) : pas de remontée automatique du volume
+  const thr=SIG+3-k*14,ra=1+k*3,over=Math.max(0,SIG-thr);n.dryC.gain.value=1;n.mk.gain.value=1;
+  n.w.parameters.get("comp").value=on?1:0;n.w.parameters.get("thr").value=thr;n.w.parameters.get("ratio").value=ra;n.w.parameters.get("mk").value=on?Math.pow(10,over*(1-1/ra)*.5/20):1}
+ else{n.comp.knee.value=on?12:0;n.dryC.gain.value=on?0:1;n.mk.gain.value=1}
  // sans compression, le compresseur est contourné : « telle quelle » = vraiment brut
- try{if(on){n.comp.disconnect();n.comp.connect(n.mk)}}catch(e){}
- if(!on){try{n.comp.disconnect()}catch(e){}}
- if(n.lastLen!==v.revlen){n.rv.buffer=impulse(c,v.revlen);n.lastLen=v.revlen}n.rvG.gain.value=v.rev/100*.8;n.pd.delayTime.value=(v.pre||0)/1000;
+ if(!n.w&&on!==n.compOn){try{n.comp.disconnect()}catch(e){}if(on)n.comp.connect(n.mk);n.compOn=on}
+ if(n.lastLen!==v.revlen){n.lastLen=v.revlen;const L=v.revlen;if(c===ctx){clearTimeout(n.irT);n.irT=setTimeout(()=>{n.rv.buffer=irFor(c,L)},150);if(!n.rv.buffer)n.rv.buffer=irFor(c,L)}else n.rv.buffer=irFor(c,L)}n.rvG.gain.value=v.rev/100*.8;n.pd.delayTime.value=(v.pre||0)/1000;
  n.dl.delayTime.value=v.echot/1000;n.fb.gain.value=.3;n.dlG.gain.value=v.echo/100*.6;
- n.out.gain.value=isOrig?0:1;n.byp.gain.value=isOrig?1:0;n.match.gain.value=m}
+ n.out.gain.value=isOrig?0:1;n.byp.gain.value=isOrig?1:0;if(c===ctx)n.match.gain.setTargetAtTime(m,c.currentTime,.05);else n.match.gain.value=m}
 // --- Bus de mixage : voix (avec effets) + musique (intacte) -> sortie
 function buses(c,dest){const b={v:c.createGain(),m:c.createGain(),out:c.createGain()};b.v.connect(b.out);b.m.connect(b.out);b.out.connect(dest);return b}
 const dB=x=>x<=-30?0:Math.pow(10,x/20);
 function mixGains(isOrig){let gv=isOrig?1:dB(+$("volV").value),gm=isOrig?1:dB(+$("volM").value);if(solo==="v")gm=0;if(solo==="m")gv=0;return[gv,gm]}
 function applyMix(){if(!bus)return;const[gv,gm]=mixGains(orig),t=ctx.currentTime;bus.v.gain.setTargetAtTime(gv,t,.02);bus.m.gain.setTargetAtTime(gm,t,.02)}
-function ensure(){if(!ctx){ctx=new AudioContext();bus=buses(ctx,ctx.destination);nodes=chain(ctx,bus.v);
+function ensure(){if(!ctx){ctx=new AudioContext({latencyHint:"playback"});bus=buses(ctx,ctx.destination);nodes=chain(ctx,bus.v);
  prepWK(ctx).then(ok=>{if(!ok)return;const was=playing,pos=offsetNow();if(was)halt();try{nodes.out.disconnect();nodes.byp.disconnect()}catch(e){}nodes=chain(ctx,bus.v);update();if(was){offset=pos;play()}});
  bus.anV=ctx.createAnalyser();bus.anM=ctx.createAnalyser();bus.anO=ctx.createAnalyser();[bus.anV,bus.anM,bus.anO].forEach(a=>a.fftSize=1024);
  bus.v.connect(bus.anV);bus.m.connect(bus.anM);bus.out.connect(bus.anO);update()}}
@@ -253,7 +268,7 @@ async function matchFor(v){const[a,b]=region(),sr=buf.sampleRate,len=Math.max(1,
  const dry=rms(buf,Math.floor(a*sr)),wet=rms(r,0);return wet>1e-6&&dry>1e-6?Math.min(4,Math.max(.25,dry/wet)):1}
 let mt,mseq=0;function scheduleMatch(){clearTimeout(mt);if(buf&&!override)mt=setTimeout(measure,350)}
 async function measure(){const id=++mseq,g=await matchFor(effective());if(id!==mseq||override)return;gainMatch=g;
- $("mg").textContent=$("match").checked?"(correction "+(20*Math.log10(g)).toFixed(1)+" dB)":"";if(nodes)nodes.match.gain.value=$("match").checked?g:1}
+ $("mg").textContent=$("match").checked?"(correction "+(20*Math.log10(g)).toFixed(1)+" dB)":"";if(nodes)nodes.match.gain.setTargetAtTime($("match").checked?g:1,ctx.currentTime,.05)}
 $("match").onchange=update;
 // --- Onde sonore
 function peaksOf(b){const W=1200,d=b.getChannelData(0),d2=b.numberOfChannels>1?b.getChannelData(1):d,step=Math.max(1,Math.floor(d.length/W)),p=new Float32Array(W);
