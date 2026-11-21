@@ -43,7 +43,7 @@ label.btn.sec{background:#eee6dd;color:#2b2622}
 @media (max-width:560px){body{padding:8px}.app{padding:14px}.sl{grid-template-columns:96px 1fr 52px;font-size:.9rem}
 button,label.btn{padding:10px 12px}#wave{height:90px}}
 </style></head><body><div class="app">
-<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4</span></p>
+<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.1</span></p>
 <div class="tabs"><button id="mSimple" class="act">Mode simple</button><button id="mAdv">Mode avancé</button></div>
 
 <div class="row"><label class="btn">Importer une voix ou un morceau<input id="file" type="file" accept="audio/*" hidden></label>
@@ -109,9 +109,14 @@ De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01
 <div class="sl">Clarté<input type="range" id="clar" min="-6" max="6" step=".5"><span></span></div></div>
 <h2>Régularité <label><input type="checkbox" class="fx" data-fx="dyn" checked> actif</label></h2>
 <div class="g-dyn"><div class="sl">Compression<input type="range" id="comp" min="0" max="100"><span></span></div></div>
-<h2>Réverbération <label><input type="checkbox" class="fx" data-fx="rev" checked> actif</label></h2>
-<div class="g-rev"><div class="sl">Quantité<input type="range" id="rev" min="0" max="100"><span></span></div>
-<div class="sl">Durée salle<input type="range" id="revlen" min="0.5" max="5" step=".1"><span></span></div></div>
+</div>
+<h2>Réverbération et profondeur <label><input type="checkbox" class="fx" data-fx="rev" checked> actif</label></h2>
+<div class="g-rev"><div class="row" id="rooms"><button class="sec" data-room="piece">Pièce</button><button class="sec" data-room="eglise">Église</button><button class="sec" data-room="cathedrale">Cathédrale</button></div>
+<div class="sl">Quantité<input type="range" id="rev" min="0" max="100"><span></span></div>
+<div class="sl">Durée salle<input type="range" id="revlen" min="0.5" max="8" step=".1"><span></span></div>
+<div class="sl">Profondeur<input type="range" id="pre" min="0" max="150" step="5"><span></span></div>
+<p class="hint">Choisis un lieu, puis dose la quantité. « Profondeur » éloigne un peu la réverbération de ta voix : la voix reste nette devant, l’espace s’ouvre derrière.</p></div>
+<div class="adv">
 <h2>Écho <label><input type="checkbox" class="fx" data-fx="echo" checked> actif</label></h2>
 <div class="g-echo"><div class="sl">Quantité<input type="range" id="echo" min="0" max="100"><span></span></div>
 <div class="sl">Espacement<input type="range" id="echot" min="100" max="800" step="10"><span></span></div></div>
@@ -130,14 +135,16 @@ De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01
 <script src="lame.min.js"></script>
 <script src="sep-core.js"></script>
 <script>
-const NEUTRAL={corps:0,brill:0,inner:0,warm:0,clar:0,comp:0,rev:0,revlen:1.2,echo:0,echot:300};
+const NEUTRAL={corps:0,brill:0,inner:0,warm:0,clar:0,comp:0,rev:0,revlen:1.2,pre:0,echo:0,echot:300};
 const BUILTIN={
  "Ma voix telle quelle":{...NEUTRAL},
  "Naturel":{...NEUTRAL,warm:0.5,clar:1,comp:20,rev:8},
  "Ma voix intérieure":{...NEUTRAL,inner:50,warm:0.5,clar:1,comp:20,rev:8},
  "Intimiste":{...NEUTRAL,warm:2.5,clar:-1,comp:30,rev:15,revlen:1},
  "Pop":{...NEUTRAL,clar:3.5,comp:55,rev:15,revlen:1.5,echo:12,echot:250},
- "Ballade":{...NEUTRAL,warm:1.5,clar:1.5,comp:35,rev:35,revlen:3.2,echo:15,echot:450}};
+ "Ballade":{...NEUTRAL,warm:1.5,clar:1.5,comp:35,rev:35,revlen:3.2,pre:25,echo:15,echot:450},
+ "Cathédrale":{...NEUTRAL,warm:1,clar:1,comp:25,rev:38,revlen:6.5,pre:70}};
+const ROOMS={piece:{revlen:1.2,pre:10,rev:20},eglise:{revlen:3.5,pre:35,rev:30},cathedrale:{revlen:6.5,pre:70,rev:38}};
 const ids=Object.keys(NEUTRAL),SCALE=["corps","brill","inner","warm","clar","comp","rev","echo"];
 const FX={timbre:["corps","brill"],inner:["inner"],color:["warm","clar"],dyn:["comp"],rev:["rev"],echo:["echo"]};
 let custom={};try{custom=JSON.parse(localStorage.getItem("msv-presets")||"{}")}catch(e){}
@@ -154,24 +161,32 @@ function effective(){if(override)return override;const v=sliders(),k=+$("amt").v
  SCALE.forEach(i=>v[i]=NEUTRAL[i]+(v[i]-NEUTRAL[i])*k);
  document.querySelectorAll(".fx").forEach(c=>{if(!c.checked)FX[c.dataset.fx].forEach(i=>v[i]=NEUTRAL[i])});
  v.comp=Math.min(100,v.comp);v.rev=Math.min(100,v.rev);v.echo=Math.min(100,v.echo);v.inner=Math.min(100,v.inner);return v}
-function lab(i){const e=$(i),u={warm:" dB",clar:" dB",corps:" dB",brill:" dB",revlen:" s",echot:" ms"}[i]||" %";e.nextElementSibling.textContent=(+e.value>0&&u===" dB"?"+":"")+e.value+u}
+function lab(i){const e=$(i),u={warm:" dB",clar:" dB",corps:" dB",brill:" dB",revlen:" s",echot:" ms",pre:" ms"}[i]||" %";e.nextElementSibling.textContent=(+e.value>0&&u===" dB"?"+":"")+e.value+u}
 function setVals(v){ids.forEach(i=>{$(i).value=v[i]??NEUTRAL[i];lab(i)});update()}
 function renderPresets(){const d=$("presets");d.innerHTML="";Object.keys(P).forEach(n=>{const b=document.createElement("button");b.className="sec"+(n===cur?" on":"");b.textContent=n;
  b.onclick=()=>{cur=n;setVals(P[n]);renderPresets()};d.append(b)});$("del").style.display=custom[cur]&&document.body.classList.contains("advanced")?"inline-block":"none"}
 function update(){ids.forEach(lab);lab("amt");document.querySelectorAll(".fx").forEach(c=>document.querySelector(".g-"+c.dataset.fx).classList.toggle("off",!c.checked));
  if(nodes)apply(nodes,effective(),ctx,orig,$("match").checked?gainMatch:1);applyMix();scheduleMatch()}
 // --- Chaîne audio
-function impulse(c,len){const r=c.sampleRate,n=Math.floor(r*len),b=c.createBuffer(2,n,r);for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}return b}
+// Réverbération : queue qui s'éteint de 60 dB sur la durée choisie, aigus amortis au fil du temps
+// (comme dans une grande nef en pierre), premières réflexions et stéréo large. Aléatoire « fixe »
+// pour que l'écoute et l'export sonnent pareil.
+function impulse(c,len){const r=c.sampleRate,n=Math.floor(r*len),b=c.createBuffer(2,n,r);
+ for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);let seed=12345+ch*777,y=0,e=0;const rnd=()=>{seed=(seed*1103515245+12345)>>>0;return seed/2147483648-1};
+  for(let i=0;i<n;i++){const t=i/n,k=0.85-0.7*t,env=Math.exp(-6.9*i/n)*Math.min(1,i/(r*.004));y+=k*(rnd()-y);d[i]=y*env/Math.sqrt(k);e+=d[i]*d[i]}
+  for(let j=0;j<10;j++){const p=Math.floor(r*(0.007+0.009*j+0.004*((j*7+ch*3)%5))),v=(j%2?-1:1)*0.9*Math.pow(.82,j);if(p<n)d[p]+=v*Math.sqrt(e/n)*20}
+  let s2=0;for(let i=0;i<n;i++)s2+=d[i]*d[i];const g=Math.sqrt(r*0.08/s2);for(let i=0;i<n;i++)d[i]*=g}
+ return b}
 function bq(c,type,f,Q){const b=c.createBiquadFilter();b.type=type;b.frequency.value=f;if(Q)b.Q.value=Q;return b}
 function chain(c,dest){const n={};n.inp=c.createGain();
  n.tLow=bq(c,"lowshelf",200);n.tMid=bq(c,"peaking",400,.6);n.tHi=bq(c,"highshelf",3500);n.tPr=bq(c,"peaking",2500,.8);
  n.iLow=bq(c,"lowshelf",150);n.iMid=bq(c,"peaking",320,.7);n.iHi=bq(c,"highshelf",6000);
  n.low=bq(c,"lowshelf",250);n.mid=bq(c,"peaking",3500,.8);n.hi=bq(c,"highshelf",9000);
- n.comp=c.createDynamicsCompressor();n.mk=c.createGain();n.out=c.createGain();n.rv=c.createConvolver();n.rvG=c.createGain();
+ n.comp=c.createDynamicsCompressor();n.mk=c.createGain();n.out=c.createGain();n.rv=c.createConvolver();n.rvG=c.createGain();n.pd=c.createDelay(1);n.rvHp=bq(c,"highpass",180,.7);
  n.dl=c.createDelay(2);n.fb=c.createGain();n.dlG=c.createGain();n.byp=c.createGain();n.match=c.createGain();n.dryC=c.createGain();
  let x=n.inp;[n.tLow,n.tMid,n.tHi,n.tPr,n.iLow,n.iMid,n.iHi,n.low,n.mid,n.hi].forEach(f=>{x.connect(f);x=f});
  x.connect(n.comp).connect(n.mk);x.connect(n.dryC).connect(n.mk);
- n.mk.connect(n.out);n.mk.connect(n.rv).connect(n.rvG).connect(n.out);n.mk.connect(n.dl);n.dl.connect(n.fb).connect(n.dl);n.dl.connect(n.dlG).connect(n.out);
+ n.mk.connect(n.out);n.mk.connect(n.pd).connect(n.rvHp).connect(n.rv).connect(n.rvG).connect(n.out);n.mk.connect(n.dl);n.dl.connect(n.fb).connect(n.dl);n.dl.connect(n.dlG).connect(n.out);
  n.out.connect(n.match).connect(dest);n.inp.connect(n.byp).connect(dest);n.lastLen=0;return n}
 function apply(n,v,c,isOrig,m){
  n.tLow.gain.value=v.corps*.8;n.tMid.gain.value=v.corps;n.tHi.gain.value=v.brill;n.tPr.gain.value=v.brill*.5;
@@ -182,7 +197,7 @@ function apply(n,v,c,isOrig,m){
  // sans compression, le compresseur est contourné : « telle quelle » = vraiment brut
  try{if(on){n.comp.disconnect();n.comp.connect(n.mk)}}catch(e){}
  if(!on){try{n.comp.disconnect()}catch(e){}}
- if(n.lastLen!==v.revlen){n.rv.buffer=impulse(c,v.revlen);n.lastLen=v.revlen}n.rvG.gain.value=v.rev/100*.8;
+ if(n.lastLen!==v.revlen){n.rv.buffer=impulse(c,v.revlen);n.lastLen=v.revlen}n.rvG.gain.value=v.rev/100*.8;n.pd.delayTime.value=(v.pre||0)/1000;
  n.dl.delayTime.value=v.echot/1000;n.fb.gain.value=.3;n.dlG.gain.value=v.echo/100*.6;
  n.out.gain.value=isOrig?0:1;n.byp.gain.value=isOrig?1:0;n.match.gain.value=m}
 // --- Bus de mixage : voix (avec effets) + musique (intacte) -> sortie
@@ -317,7 +332,7 @@ $("saveOk").onclick=()=>{const n=$("saveName").value.trim();if(!n)return;if(BUIL
  P[n]=custom[n]=effective();localStorage.setItem("msv-presets",JSON.stringify(custom));cur=n;$("amt").value=100;setVals(P[n]);renderPresets();st("Préréglage « "+n+" » enregistré dans ce navigateur.")};
 let delArm=0;$("del").onclick=()=>{if(!custom[cur])return;if(Date.now()-delArm>4000){delArm=Date.now();$("del").textContent="Confirmer la suppression";setTimeout(()=>$("del").textContent="Supprimer ce préréglage",4000);return}$("del").textContent="Supprimer ce préréglage";delete custom[cur];delete P[cur];localStorage.setItem("msv-presets",JSON.stringify(custom));cur="Ma voix telle quelle";setVals(P[cur]);renderPresets()};
 // --- Export
-async function render(a,b){const v=effective(),tail=Math.max(v.rev>0?v.revlen:0,v.echo>0?2:0),sr=buf.sampleRate,
+async function render(a,b){const v=effective(),tail=Math.max(v.rev>0?v.revlen+(v.pre||0)/1000:0,v.echo>0?2:0),sr=buf.sampleRate,
  oc=new OfflineAudioContext(2,Math.ceil((b-a+tail)*sr),sr),bs=buses(oc,oc.destination),n=chain(oc,bs.v);apply(n,v,oc,false,$("match").checked?await matchFor(v):1);
  const[gv,gm]=mixGains(false);bs.v.gain.value=gv;bs.m.gain.value=gm;
  const s=oc.createBufferSource();s.buffer=buf;s.connect(n.inp);s.start(0,a,b-a);
@@ -336,10 +351,14 @@ async function mp3(b){const L=lamejs,enc=new L.Mp3Encoder(2,b.sampleRate,192),g=
 async function doExport(part){if(!buf)return;const[a,b]=part?loop():[0,buf.duration];st("Export en cours…");
  ["expAll","expPart"].forEach(i=>$(i).disabled=true);
  try{const r=await render(a,b),f=$("fmt").value,blob=f==="mp3"?await mp3(r):wav(r);
-  const el=document.createElement("a");el.href=URL.createObjectURL(blob);el.download=(mbuf?"mon-mix-":"ma-voix-")+cur.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ]+/g,"-")+(part?"-"+fmt(a).replace(":","m")+"-"+fmt(b).replace(":","m"):"")+"."+f;el.click();
+  const el=document.createElement("a");el.href=URL.createObjectURL(blob);el.download=(mbuf?"mon-mix-":"ma-voix-")+cur.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-")+(part?"-"+fmt(a).replace(":","m")+"-"+fmt(b).replace(":","m"):"")+"."+f;el.click();
   st("Export terminé"+(part?" ("+fmt(a)+" à "+fmt(b)+")":"")+". Ton original reste intact.")}catch(e){st("Erreur d’export : "+e.message)}
  ["expAll","expPart"].forEach(i=>$(i).disabled=false)}
 $("expAll").onclick=()=>doExport(false);$("expPart").onclick=()=>doExport(true);
+// --- Lieux de réverbération
+document.querySelectorAll("#rooms button").forEach(bt=>bt.onclick=()=>{const R=ROOMS[bt.dataset.room];$("revlen").value=R.revlen;$("pre").value=R.pre;
+ if(+$("rev").value<R.rev)$("rev").value=R.rev;const c=document.querySelector('.fx[data-fx="rev"]');c.checked=true;
+ document.querySelectorAll("#rooms button").forEach(x=>x.classList.toggle("on",x===bt));update();st("Lieu « "+bt.textContent+" » choisi. Ajuste la quantité à ton goût, et compare avec l’original.")});
 // --- Mixage voix / musique
 const MIXK="msv-mix";try{const m=JSON.parse(localStorage.getItem(MIXK)||"{}");if(m.v!=null)$("volV").value=m.v;if(m.m!=null)$("volM").value=m.m}catch(e){}
 function labVol(i){const v=+$(i).value;$(i).nextElementSibling.textContent=v<=-30?"Muet":(v>0?"+":"")+v+" dB"}

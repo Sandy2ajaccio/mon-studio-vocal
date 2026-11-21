@@ -1,7 +1,7 @@
 // Service worker de Mon Studio Vocal
 // À chaque nouvelle version publiée, change le numéro ci-dessous (v6 -> v7…)
 // pour que les téléphones récupèrent les nouveaux fichiers.
-const CACHE = "studio-vocal-v6";
+const CACHE = "studio-vocal-v7";
 const FICHIERS = ["./", "index.html", "sep-core.js", "lame.min.js", "manifest.json", "icon-192.png", "icon-512.png"];
 
 // Installation : met tous les fichiers de l'application en cache (fonctionnement hors connexion)
