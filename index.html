@@ -24,6 +24,8 @@ select{padding:8px;border-radius:8px;border:1px solid #d8cfc4;font-size:.95rem;b
 .tabs button{background:transparent;color:#2b2622;padding:6px 14px}.tabs button.act{background:#fff;box-shadow:0 1px 3px #0002}
 .adv{display:none}body.advanced .adv{display:block}
 .off{opacity:.4}
+.sl.chg{background:#f6e3c8;border-radius:6px;transition:background .3s}
+#pdesc{margin-top:8px;font-size:.88rem;color:#2b2622}
 #recbox{display:none;margin-top:10px}#recbox.show{display:block}
 .meter{height:14px;background:#eee6dd;border-radius:7px;overflow:hidden;margin:8px 0}
 .meter div{height:100%;width:0;background:#6a9a5a;transition:width .05s}
@@ -43,7 +45,7 @@ label.btn.sec{background:#eee6dd;color:#2b2622}
 @media (max-width:560px){body{padding:8px}.app{padding:14px}.sl{grid-template-columns:96px 1fr 52px;font-size:.9rem}
 button,label.btn{padding:10px 12px}#wave{height:90px}}
 </style></head><body><div class="app">
-<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.6</span></p>
+<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.7</span></p>
 <div class="tabs"><button id="mSimple" class="act">Mode simple</button><button id="mAdv">Mode avancé</button></div>
 
 <div class="row"><label class="btn">Importer une voix ou un morceau<input id="file" type="file" accept="audio/*" hidden></label>
@@ -96,6 +98,7 @@ De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01
 <h2>Préréglages</h2><div class="row" id="presets"></div>
 <div class="sl" style="margin-top:10px"><b>Intensité</b><input type="range" id="amt" min="0" max="150" value="100"><span></span></div>
 <p class="hint">À 0 %, tu entends ta prise telle quelle ; à 100 %, le préréglage tel qu’il est prévu.</p>
+<div class="box" id="pdesc"></div>
 
 <div class="adv">
 <h2>Mon timbre <label><input type="checkbox" class="fx" data-fx="timbre" checked> actif</label></h2>
@@ -165,9 +168,17 @@ function effective(){if(override)return override;const v=sliders(),k=+$("amt").v
  document.querySelectorAll(".fx").forEach(c=>{if(!c.checked)FX[c.dataset.fx].forEach(i=>v[i]=NEUTRAL[i])});
  v.comp=Math.min(100,v.comp);v.artic=Math.min(100,v.artic);v.rev=Math.min(100,v.rev);v.echo=Math.min(100,v.echo);v.inner=Math.min(100,v.inner);return v}
 function lab(i){const e=$(i),u={warm:" dB",clar:" dB",corps:" dB",brill:" dB",revlen:" s",echot:" ms",pre:" ms"}[i]||" %";e.nextElementSibling.textContent=(+e.value>0&&u===" dB"?"+":"")+e.value+u}
-function setVals(v){ids.forEach(i=>{$(i).value=v[i]??NEUTRAL[i];lab(i)});update()}
+// Ce que fait le préréglage choisi, en clair
+const NAMES={corps:["Corps"," dB"],brill:["Brillance"," dB"],inner:["Voix intérieure"," %"],artic:["Articulation"," %"],warm:["Moins nasale"," dB"],clar:["Aigus"," dB"],comp:["Régularité"," %"],rev:["Réverbération"," %"],echo:["Écho"," %"]};
+function describe(v){const t=[];for(const k in NAMES){const x=v[k]??0;if(Math.abs(x)>0.001)t.push(NAMES[k][0]+" "+(x>0&&NAMES[k][1]===" dB"?"+":"")+x+NAMES[k][1])}
+ if((v.rev||0)>0)t.push("salle "+v.revlen+" s");if((v.echo||0)>0)t.push("écho tous les "+v.echot+" ms");
+ return t.length?t.join(" · "):"Aucun effet : ta prise brute."}
+function showDesc(){const el=$("pdesc");if(!el)return;el.innerHTML="<b>« "+cur+" »</b> : "+describe(P[cur])+(playing?"":" <span class=\"hint\">— appuie sur ▶ Lecture pour l’entendre.</span>")}
+function flashChanged(){const v=P[cur];document.querySelectorAll(".sl").forEach(r=>r.classList.remove("chg"));
+ ids.forEach(i=>{if(Math.abs((v[i]??NEUTRAL[i])-NEUTRAL[i])>0.001){const r=$(i).closest(".sl");if(r){r.classList.add("chg");setTimeout(()=>r.classList.remove("chg"),2500)}}})}
+function setVals(v){ids.forEach(i=>{$(i).value=v[i]??NEUTRAL[i];lab(i)});update();showDesc()}
 function renderPresets(){const d=$("presets");d.innerHTML="";Object.keys(P).forEach(n=>{const b=document.createElement("button");b.className="sec"+(n===cur?" on":"");b.textContent=n;
- b.onclick=()=>{cur=n;setVals(P[n]);renderPresets()};d.append(b)});$("del").style.display=custom[cur]&&document.body.classList.contains("advanced")?"inline-block":"none"}
+ b.onclick=()=>{cur=n;setVals(P[n]);renderPresets();flashChanged()};d.append(b)});$("del").style.display=custom[cur]&&document.body.classList.contains("advanced")?"inline-block":"none"}
 function update(){ids.forEach(lab);lab("amt");document.querySelectorAll(".fx").forEach(c=>document.querySelector(".g-"+c.dataset.fx).classList.toggle("off",!c.checked));
  if(nodes)apply(nodes,effective(),ctx,orig,$("match").checked?gainMatch:1);applyMix();scheduleMatch()}
 // --- Chaîne audio
@@ -296,10 +307,10 @@ function offsetNow(){if(!playing||!src)return offset;let t=Math.max(0,ctx.curren
 function play(){if(busy)return;ensure();ctx.resume();src=ctx.createBufferSource();src.buffer=buf;src.connect(nodes.inp);
  srcM=null;if(mbuf){srcM=ctx.createBufferSource();srcM.buffer=mbuf;srcM.connect(bus.m)}
  if($("loopOn").checked){const[a,b]=loop();[src,srcM].forEach(s=>{if(s){s.loop=true;s.loopStart=a;s.loopEnd=b}});if(offset<a||offset>=b)offset=a}
- const t0=ctx.currentTime+.03;src.start(t0,offset);if(srcM)srcM.start(t0,offset);startT=t0-offset;playing=true;$("play").textContent="❚❚ Pause";
+ const t0=ctx.currentTime+.03;src.start(t0,offset);setTimeout(showDesc);if(srcM)srcM.start(t0,offset);startT=t0-offset;playing=true;$("play").textContent="❚❚ Pause";
  const me=src;src.onended=()=>{if(me===src&&playing){playing=false;src=null;offset=0;$("play").textContent="▶ Lecture"}}}
 function halt(){if(src){const s=src;src=null;try{s.stop()}catch(e){}}if(srcM){try{srcM.stop()}catch(e){}srcM=null}playing=false}
-function pause(){if(playing){offset=offsetNow();halt();$("play").textContent="▶ Lecture"}}
+function pause(){if(playing){offset=offsetNow();halt();showDesc();$("play").textContent="▶ Lecture"}}
 function stop(){halt();offset=$("loopOn").checked&&buf?loop()[0]:0;$("play").textContent="▶ Lecture"}
 function seek(t){const was=playing;if(was)halt();offset=t;if(was)play();scheduleMatch()}
 function loopChanged(){if(playing){const p=offsetNow();halt();offset=p;play()}scheduleMatch()}
