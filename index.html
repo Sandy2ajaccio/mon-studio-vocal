@@ -45,7 +45,7 @@ label.btn.sec{background:#eee6dd;color:#2b2622}
 @media (max-width:560px){body{padding:8px}.app{padding:14px}.sl{grid-template-columns:96px 1fr 52px;font-size:.9rem}
 button,label.btn{padding:10px 12px}#wave{height:90px}}
 </style></head><body><div class="app">
-<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.7</span></p>
+<h1>Mon Studio Vocal</h1><p class="sub">Ta voix, mise en valeur — l’original n’est jamais modifié. <span class="hint">Version 4.8</span></p>
 <div class="tabs"><button id="mSimple" class="act">Mode simple</button><button id="mAdv">Mode avancé</button></div>
 
 <div class="row"><label class="btn">Importer une voix ou un morceau<input id="file" type="file" accept="audio/*" hidden></label>
@@ -83,6 +83,19 @@ button,label.btn{padding:10px 12px}#wave{height:90px}}
 <div class="row"><label><input type="checkbox" id="loopOn"> Boucle</label>
 De <input class="t" id="la" value="01:00"> à <input class="t" id="lb" value="01:40">
 <button class="sec" id="setA" disabled>Début ici</button><button class="sec" id="setB" disabled>Fin ici</button></div>
+
+<h2>Recaler ma voix</h2>
+<div class="box" id="rcBox">
+ <p class="hint" id="rcNeed" style="margin:0">Pour recaler ta voix sur la musique, il faut deux pistes : sépare ton morceau ou ajoute l’accompagnement (section « Voix et musique »).</p>
+ <div id="rcCtl" style="display:none">
+  <p class="hint" style="margin:0 0 6px">1. Choisis la phrase à recaler en glissant sur l’onde, avec <b>un peu de silence avant et après</b>. 2. Écoute en boucle et décale ta voix jusqu’à ce qu’elle tombe sur le temps. La musique ne bouge pas.</p>
+  <div class="row"><label><input type="radio" name="rcScope" value="part" checked> Ce passage <b id="rcPart"></b></label><label><input type="radio" name="rcScope" value="all"> Tout le morceau</label></div>
+  <div class="sl"><b>Décalage</b><input type="range" id="rcShift" min="-500" max="500" step="5" value="0"><span id="rcLab">0 ms</span></div>
+  <div class="row"><button class="sec" id="rcEarly">◀ Plus tôt (10 ms)</button><button class="sec" id="rcLate">Plus tard (10 ms) ▶</button><button class="sec" id="rcPlay">▶ Écouter le passage</button></div>
+  <div class="row" style="margin-top:8px"><button id="rcOk">Valider ce recalage</button><button class="sec" id="rcUndo">Annuler le dernier</button><button class="sec" id="rcClear">Tout annuler</button></div>
+  <p class="hint" id="rcList" style="margin:8px 0 0"></p>
+ </div>
+</div>
 
 <h2>Retrouver mon timbre</h2>
 <div class="box" id="testIntro"><p style="margin:0 0 8px">Comme chez l’opticien : tu écoutes deux versions du même passage et tu choisis celle qui te ressemble le plus. 10 choix, et ton préréglage « Mon timbre » est créé.</p>
@@ -313,7 +326,7 @@ function halt(){if(src){const s=src;src=null;try{s.stop()}catch(e){}}if(srcM){tr
 function pause(){if(playing){offset=offsetNow();halt();showDesc();$("play").textContent="▶ Lecture"}}
 function stop(){halt();offset=$("loopOn").checked&&buf?loop()[0]:0;$("play").textContent="▶ Lecture"}
 function seek(t){const was=playing;if(was)halt();offset=t;if(was)play();scheduleMatch()}
-function loopChanged(){if(playing){const p=offsetNow();halt();offset=p;play()}scheduleMatch()}
+function loopChanged(){rcUI();if(playing){const p=offsetNow();halt();offset=p;play()}scheduleMatch()}
 $("play").onclick=()=>playing?pause():play();$("stop").onclick=stop;
 ["loopOn","la","lb"].forEach(i=>$(i).onchange=loopChanged);
 $("setA").onclick=()=>{$("la").value=fmt(offsetNow());loopChanged()};$("setB").onclick=()=>{$("lb").value=fmt(offsetNow());$("loopOn").checked=true;loopChanged()};
@@ -332,7 +345,7 @@ function tick(){if(buf)$("time").textContent=fmt(offsetNow())+" / "+fmt(buf.dura
 // Niveau « chanté » de la prise : moyenne des passages les plus forts (fenêtres de 50 ms)
 function measureSig(b){const d=b.getChannelData(0),w=Math.floor(b.sampleRate*.05),a=[];for(let i=0;i+w<d.length;i+=w){let t=0;for(let j=i;j<i+w;j+=2)t+=d[j]*d[j];a.push(t/(w/2))}
  a.sort((x,y)=>y-x);const top=a.slice(0,Math.max(1,Math.floor(a.length*.3)));const m=top.reduce((x,y)=>x+y,0)/top.length;SIG=m>0?Math.max(-60,10*Math.log10(m)):-20}
-async function load(ab,name){ensure();buf=await ctx.decodeAudioData(ab);mbuf=null;separated=false;offset=0;measureSig(buf);computePeaks();mixUI();
+async function load(ab,name){ensure();buf=await ctx.decodeAudioData(ab);mbuf=null;separated=false;offset=0;measureSig(buf);computePeaks();mixUI();resetRecal();
  ["play","stop","ab","expAll","expPart","setA","setB","testStart"].forEach(i=>$(i).disabled=false);mixUI();
  if(buf.duration<100){$("la").value="00:00";$("lb").value=fmt(Math.min(buf.duration,40))}
  scheduleMatch();st((name||"Prise")+" chargée ("+fmt(buf.duration)+"). Glisse sur l’onde pour choisir un passage, puis compare original et résultat.")}
@@ -424,6 +437,30 @@ $("expAll").onclick=()=>doExport(false);$("expPart").onclick=()=>doExport(true);
 document.querySelectorAll("#rooms button").forEach(bt=>bt.onclick=()=>{const R=ROOMS[bt.dataset.room];$("revlen").value=R.revlen;$("pre").value=R.pre;
  $("rev").value=R.rev;$("amt").value=Math.max(100,+$("amt").value);if(+$("artic").value<40&&R.revlen>2)$("artic").value=50;const c=document.querySelector('.fx[data-fx="rev"]');c.checked=true;
  document.querySelectorAll("#rooms button").forEach(x=>x.classList.toggle("on",x===bt));update();st("Lieu « "+bt.textContent+" » choisi. Ajuste la quantité à ton goût, et compare avec l’original.")});
+// --- Recaler ma voix (non destructif : la prise d'origine est gardée)
+let origV=null,rcEdits=[];
+function resetRecal(){origV=buf;rcEdits=[];$("rcShift").value=0;rcUI()}
+function rcScope(){return document.querySelector('input[name="rcScope"]:checked').value}
+function rcPending(){const s=+$("rcShift").value/1000;if(!s)return null;if(rcScope()==="all")return{all:true,s};const[a,b]=loop();return{a,b,s}}
+function rcUI(){const has=!!mbuf&&!!buf;$("rcNeed").style.display=has?"none":"block";$("rcCtl").style.display=has?"block":"none";if(!has)return;
+ const v=+$("rcShift").value;$("rcLab").textContent=(v>0?"+":"")+v+" ms";const[a,b]=loop();$("rcPart").textContent="("+fmt(a)+" → "+fmt(b)+")";
+ const d=e=>(e.s>0?"+":"")+Math.round(e.s*1000)+" ms";
+ $("rcList").textContent=rcEdits.length?"Recalages validés : "+rcEdits.map(e=>e.all?"tout le morceau "+d(e):fmt(e.a)+"–"+fmt(e.b)+" "+d(e)).join(" · ")+". Ta prise d’origine est conservée.":"Aucun recalage validé pour l’instant. « Plus tard » si tu chantes trop tôt, « Plus tôt » si tu chantes trop tard."}
+function rcBuild(){if(!origV)return;const sr=origV.sampleRate,n=origV.length,ch=origV.numberOfChannels,nb=ctx.createBuffer(ch,n,sr),F=Math.floor(.03*sr);
+ const list=rcEdits.slice();const p=rcPending();if(p)list.push(p);
+ for(let c=0;c<ch;c++){const src=origV.getChannelData(c),dst=nb.getChannelData(c);dst.set(src);
+  for(const e of list){const prev=dst.slice(),S=Math.round(e.s*sr),A=e.all?0:Math.max(0,Math.round(e.a*sr)),B=e.all?n:Math.min(n,Math.round(e.b*sr));
+   // chaque recalage s'ajoute aux précédents
+   for(let i=A;i<B;i++){const j=i-S,v=j>=0&&j<n?prev[j]:0,w=e.all?1:Math.min(1,(i-A)/F,(B-1-i)/F);dst[i]=w*v+(1-w)*prev[i]}}}
+ const was=playing,pos=offsetNow();if(was)halt();buf=nb;computePeaks();if(was){offset=pos;play()}scheduleMatch();rcUI()}
+let rcT;function rcChanged(){rcUI();clearTimeout(rcT);rcT=setTimeout(rcBuild,200)}
+$("rcShift").oninput=rcChanged;document.querySelectorAll('input[name="rcScope"]').forEach(r=>r.onchange=rcChanged);
+$("rcEarly").onclick=()=>{$("rcShift").value=+$("rcShift").value-10;rcChanged()};$("rcLate").onclick=()=>{$("rcShift").value=+$("rcShift").value+10;rcChanged()};
+$("rcPlay").onclick=()=>{if(!buf)return;if(rcScope()==="part"&&!$("loopOn").checked){$("loopOn").checked=true;loopChanged()}if(playing)stop();offset=rcScope()==="part"?loop()[0]:offset;play()};
+$("rcOk").onclick=()=>{const p=rcPending();if(!p){st("Choisis d’abord un décalage.");return}rcEdits.push(p);$("rcShift").value=0;rcBuild();st("Recalage validé ("+(p.s>0?"+":"")+Math.round(p.s*1000)+" ms). Tu peux choisir une autre phrase.")};
+$("rcUndo").onclick=()=>{if(!rcEdits.length&&!+$("rcShift").value)return;if(+$("rcShift").value)$("rcShift").value=0;else rcEdits.pop();rcBuild();st("Dernier recalage annulé.")};
+$("rcClear").onclick=()=>{rcEdits=[];$("rcShift").value=0;rcBuild();st("Tous les recalages sont annulés : ta voix est revenue à sa place d’origine.")};
+["la","lb","loopOn"].forEach(i=>$(i).addEventListener("change",rcUI));
 // --- Mixage voix / musique
 const MIXK="msv-mix";try{const m=JSON.parse(localStorage.getItem(MIXK)||"{}");if(m.v!=null)$("volV").value=m.v;if(m.m!=null)$("volM").value=m.m}catch(e){}
 function labVol(i){const v=+$(i).value;$(i).nextElementSibling.textContent=v<=-30?"Muet":(v>0?"+":"")+v+" dB"}
@@ -435,7 +472,7 @@ function mixUI(){const has=!!mbuf;$("mixCtl").classList.toggle("dis",!has);$("vo
  if(!has&&solo==="m")setSolo("all");$("sep").disabled=!buf||has||busy||buf.numberOfChannels<2;$("sep").style.display=has?"none":"inline-block";$("mixOff").style.display=has?"inline-block":"none";
  $("accLbl").style.display=has?"none":"inline-block";$("legend").style.display=has?"inline":"none";applyMix()}
 function padTo(b,len){if(b.length>=len)return b;const n=ctx.createBuffer(b.numberOfChannels,len,b.sampleRate);for(let c=0;c<b.numberOfChannels;c++)n.getChannelData(c).set(b.getChannelData(c));return n}
-function mixReady(msg){offset=Math.min(offset,buf.duration);computePeaks();mixUI();scheduleMatch();st(msg)}
+function mixReady(msg){offset=Math.min(offset,buf.duration);resetRecal();computePeaks();mixUI();scheduleMatch();st(msg)}
 $("accFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f||!buf)return;stop();
  try{const m=await ctx.decodeAudioData(await f.arrayBuffer()),len=Math.max(m.length,buf.length);buf=padTo(buf,len);mbuf=padTo(m,len);separated=false;
   mixReady("Accompagnement « "+f.name+" » ajouté. Règle le volume de la voix et celui de la musique.")}catch(err){st("Fichier illisible : "+err.message)}};
