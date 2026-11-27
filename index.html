@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal">
-<title>Mon Studio Vocal 5.0 bêta</title>
+<title>Mon Studio Vocal 5.1 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -38,7 +38,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.0 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.1 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -101,6 +101,33 @@
   </div>
   <progress id="sepbar" max="1" value="0" style="width:100%;margin-top:8px;display:none"></progress>
   <div id="sepstatus" style="color:#666;font-size:.9rem;margin-top:4px"></div>
+</div>
+
+<div class="card" id="rc-card">
+  <h2>Recaler ma voix</h2>
+  <p id="rcNeed" style="margin:0;color:#666;font-size:.9rem">Pour recaler ta voix sur la musique, il faut deux pistes : sépare ton morceau (section ci-dessus) ou ajoute l’accompagnement dans la table de mixage.</p>
+  <div id="rcCtl" style="display:none">
+    <p style="margin:0 0 6px;color:#666;font-size:.85rem">1. Choisis la phrase à recaler en glissant sur l’onde, avec <b>un peu de silence avant et après</b>. 2. Écoute en boucle et décale ta voix jusqu’à ce qu’elle tombe sur le temps. La musique ne bouge pas.</p>
+    <canvas id="rcWave" height="90" style="width:100%;height:90px;background:#faf8fc;border:1px solid var(--line);border-radius:8px;cursor:crosshair;touch-action:none"></canvas>
+    <div class="row" style="margin-top:6px">
+      <label>Début <input id="rcA" class="num" style="width:76px" type="text" inputmode="decimal" value="0:00,0"></label>
+      <label>Fin <input id="rcB" class="num" style="width:76px" type="text" inputmode="decimal" value="0:05,0"></label>
+      <button class="ms" id="rcSetA">Début ici</button><button class="ms" id="rcSetB">Fin ici</button>
+      <label><input type="checkbox" id="rcLoop"> Écouter en boucle</label>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <label><input type="radio" name="rcScope" value="part" checked> Ce passage <b id="rcPart"></b></label>
+      <label><input type="radio" name="rcScope" value="all"> Tout le morceau</label>
+    </div>
+    <div id="g-rc"></div>
+    <div class="row">
+      <button id="rcEarly">◀ Plus tôt (10 ms)</button><button id="rcLate">Plus tard (10 ms) ▶</button><button id="rcPlay">▶ Écouter le passage</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="rcOk" class="primary">Valider ce recalage</button><button id="rcUndo">Annuler le dernier</button><button id="rcClear">Tout annuler</button>
+    </div>
+    <p id="rcList" style="margin:8px 0 0;color:#666;font-size:.9rem"></p>
+  </div>
 </div>
 
 <div class="card">
@@ -347,6 +374,7 @@ self.onmessage=async e=>{
 "use strict";
 // ---------- Paramètres ----------
 const PARAMS = [
+  {id:'rcshift', g:'rc', label:'Décalage', min:-500, max:500, step:5, unit:' ms', def:0},
   {id:'tune',    g:'tune', label:'Force de correction', min:0, max:100, step:5, unit:' %', def:50},
   {id:'vvol',    g:'mixv', label:'Volume',  min:-30, max:6, step:0.5, unit:' dB', def:0},
   {id:'vpan',    g:'mixv', label:'Gauche / droite', min:-100, max:100, step:5, unit:' %', def:0},
@@ -395,7 +423,7 @@ PARAMS.forEach(p=>{
 });
 function showVal(p,force){ const el=$('v-'+p.id); if(!force && document.activeElement===el) return; const v=+state[p.id]; el.value=(p.step<1? v.toFixed(1) : String(Math.round(v))).replace('.',','); }
 function setState(obj){
-  PARAMS.forEach(p=>{ if(obj[p.id]!==undefined){ state[p.id]=obj[p.id]; $('s-'+p.id).value=obj[p.id]; showVal(p,true);} });
+  PARAMS.forEach(p=>{ if(p.id!=='rcshift' && obj[p.id]!==undefined){ state[p.id]=obj[p.id]; $('s-'+p.id).value=obj[p.id]; showVal(p,true);} });
   ['vmute','vsolo','mmute','msolo'].forEach(k=>{ if(obj[k]!==undefined) state[k]=obj[k]?1:0; });
   refreshMS(); applyAll();
 }
@@ -525,17 +553,19 @@ $('file').addEventListener('change', async e=>{
 async function play(){
   if(!buffer) return;
   if(ctx.state==='suspended') await ctx.resume();
+  { const L=loopRange(); if(L && (offset<L[0]||offset>=L[1])) offset=L[0]; }
   srcs=[];
   const mk=(b,dest)=>{ const x=ctx.createBufferSource(); x.buffer=b; x.connect(dest); x.start(0,offset); srcs.push(x); return x; };
   if(sep){ src=mk(sep.voice,chain.voiceVol); mk(sep.music,chain.music); } else src=mk(buffer,chain.voiceVol);
   connectTracks(ctx,chain); chain.trk.forEach(x=>{ if(offset<x.t.buffer.duration) mk(x.t.buffer,x.g); });
+  const L=loopRange(); if(L){ srcs.forEach(x=>{ x.loop=true; x.loopStart=L[0]; x.loopEnd=L[1]; }); }
   src.onended=()=>{ if(playing && curPos()>=buffer.duration-0.05){ playing=false; offset=0; src=null; $('play').textContent='▶ Lecture'; updateTime(); } };
   startedAt=ctx.currentTime-offset; playing=true; $('play').textContent='❚❚ Pause';
 }
 function killSrcs(){ srcs.forEach(x=>{try{x.stop()}catch(e){}}); srcs=[]; src=null; }
 function pause(){ if(!playing) return; offset=curPos(); playing=false; killSrcs(); $('play').textContent='▶ Lecture'; }
 function stop(){ playing=false; killSrcs(); offset=0; $('play').textContent='▶ Lecture'; updateTime(); }
-function curPos(){ return playing? Math.min(ctx.currentTime-startedAt, buffer.duration) : offset; }
+function curPos(){ if(!playing) return offset; let t=ctx.currentTime-startedAt; const L=srcs[0]&&srcs[0].loop? [srcs[0].loopStart,srcs[0].loopEnd] : null; if(L && t>L[1]) t=L[0]+((t-L[0])%(L[1]-L[0])); return Math.min(t, buffer.duration); }
 $('play').onclick=()=> playing?pause():play();
 $('stop').onclick=stop;
 $('ab').onclick=()=>{ bypass=!bypass; $('ab').classList.toggle('on',bypass); $('ab').textContent=bypass?'Écouter le résultat':'Écouter l’original'; applyAll(); };
@@ -582,6 +612,82 @@ $('songlist').onchange=e=>{ const k=e.target.value; if(!k) return;
   else restoreSong(); };
 refreshSongList();
 
+// ---------- Voix d’origine commune (recalage + justesse, non destructif) ----------
+let vOrig=null;                 // {kind:'sep'|'buf', buf} : la voix telle qu’importée ou séparée
+function ensureVOrig(){ const kind=sep?'sep':'buf'; if(!vOrig||vOrig.kind!==kind) vOrig={kind, buf: kind==='sep'? sep.voice : buffer}; return vOrig; }
+function refreshVoice(){ const o=ensureVOrig(); const base=(tuneOn&&tuneFixed)? tuneFixed : o.buf; tuneSet(o.kind, recalApply(base)); rcPeaks=null; drawWave(); }
+
+// ---------- Recaler ma voix ----------
+let rcEdits=[], rcPeaks=null, rcDrag=null;
+const fmtD=t=>{ t=Math.max(0,t); const m=Math.floor(t/60), s=t-m*60; return m+':'+(s<10?'0':'')+s.toFixed(1).replace('.',','); };
+const parseT=v=>{ v=String(v).trim().replace(',','.'); if(v.includes(':')){ const [m,s]=v.split(':'); return (+m||0)*60+(+s||0); } return +v||0; };
+function rcHas(){ return !!buffer && (!!sep || tracks.length>0); }
+function rcSel(){ const D=buffer?buffer.duration:0; let a=Math.max(0,Math.min(parseT($('rcA').value),D)), b=Math.max(0,Math.min(parseT($('rcB').value),D)); if(b<a){ const t=a; a=b; b=t; } if(b<a+0.5){ b=Math.min(D,a+0.5); if(b<a+0.5) a=Math.max(0,b-0.5); } return [a,b]; }
+function rcScope(){ return document.querySelector('input[name=rcScope]:checked').value; }
+function loopRange(){ return (buffer && $('rcLoop') && $('rcLoop').checked && rcHas())? rcSel() : null; }
+function rcPending(){ const sh=state.rcshift/1000; if(!sh) return null; if(rcScope()==='all') return {all:true,s:sh}; const [a,b]=rcSel(); return {a,b,s:sh}; }
+function recalApply(base){
+  const list=rcEdits.slice(), p=rcPending(); if(p) list.push(p);
+  if(!list.length) return base;
+  const sr=base.sampleRate, n=base.length, ch=base.numberOfChannels, nb=ctx.createBuffer(ch,n,sr), F=Math.floor(0.03*sr);
+  for(let c=0;c<ch;c++){ const dst=nb.getChannelData(c); dst.set(base.getChannelData(c));
+    for(const e of list){ // chaque recalage s’ajoute aux précédents ; fondu de 30 ms aux bords du passage
+      const prev=dst.slice(), S=Math.round(e.s*sr), A=e.all?0:Math.max(0,Math.round(e.a*sr)), B=e.all?n:Math.min(n,Math.round(e.b*sr));
+      for(let i=A;i<B;i++){ const j=i-S, v=(j>=0&&j<n)? prev[j] : 0, w=e.all?1:Math.min(1,(i-A)/F,(B-1-i)/F); dst[i]=w*v+(1-w)*prev[i]; } } }
+  return nb;
+}
+function rcComputePeaks(){
+  const v=sep? sep.voice : buffer; if(!v){ rcPeaks=null; return; }
+  const W=600, d0=v.getChannelData(0), step=Math.max(1,Math.floor(v.length/W)), pk=new Float32Array(W);
+  for(let i=0;i<W;i++){ let m=0; const a=i*step; for(let j=a;j<Math.min(v.length,a+step);j+=4){ const x=Math.abs(d0[j]); if(x>m) m=x; } pk[i]=m; }
+  let mx=0; pk.forEach(x=>mx=Math.max(mx,x)); rcPeaks={pk,mx:mx||1};
+}
+function drawWave(){
+  const cv=$('rcWave'); if(!cv || !rcHas()) return;
+  const W=cv.clientWidth||600, H=90; if(cv.width!==W) cv.width=W; const g=cv.getContext('2d'); g.clearRect(0,0,W,H);
+  if(!rcPeaks) rcComputePeaks(); if(!rcPeaks) return;
+  const D=buffer.duration, X=t=>t/D*W, [a,b]=rcSel();
+  if(rcScope()==='part'){ g.fillStyle='#ead9f5'; g.fillRect(X(a),0,Math.max(2,X(b)-X(a)),H); }
+  g.fillStyle='#7a3e9d'; const pk=rcPeaks.pk;
+  for(let x=0;x<W;x++){ const v=pk[Math.floor(x/W*pk.length)]/rcPeaks.mx, h=Math.max(1,v*(H-10)); g.fillRect(x,(H-h)/2,1,h); }
+  const t=curPos(); g.fillStyle='#b3261e'; g.fillRect(X(t),0,2,H);
+}
+function rcUI(){
+  const has=rcHas(); $('rcNeed').style.display=has?'none':'block'; $('rcCtl').style.display=has?'block':'none'; if(!has) return;
+  const [a,b]=rcSel(); $('rcPart').textContent='('+fmtD(a)+' → '+fmtD(b)+')';
+  const d=e=>(e.s>0?'+':'')+Math.round(e.s*1000)+' ms';
+  $('rcList').textContent= rcEdits.length? 'Recalages validés : '+rcEdits.map(e=>e.all?'tout le morceau '+d(e):fmtD(e.a)+'–'+fmtD(e.b)+' '+d(e)).join(' · ')+'. Ta prise d’origine est conservée.' : 'Aucun recalage validé pour l’instant. « Plus tard » si tu chantes trop tôt, « Plus tôt » si tu chantes trop tard.';
+  drawWave();
+}
+function rcResetUI(){ state.rcshift=0; const r=$('s-rcshift'); if(r){ r.value=0; showVal(PARAMS.find(p=>p.id==='rcshift'),true); } rcPeaks=null; if($('rcCtl')) rcUI(); }
+let rcT=null;
+function rcChanged(){ rcUI(); clearTimeout(rcT); rcT=setTimeout(()=>{ if(rcHas()) refreshVoice(); },200); }
+function rcSetShift(v){ state.rcshift=Math.max(-500,Math.min(500,v)); $('s-rcshift').value=state.rcshift; showVal(PARAMS.find(p=>p.id==='rcshift'),true); rcChanged(); }
+// le curseur et la case « Décalage » passent par applyAll : on y branche le recalage
+{ const r=$('s-rcshift'), num=$('v-rcshift'); r.addEventListener('input',rcChanged); num.addEventListener('change',()=>setTimeout(rcChanged,0)); }
+document.querySelectorAll('input[name=rcScope]').forEach(x=>x.onchange=rcChanged);
+['rcA','rcB'].forEach(id=>{ $(id).addEventListener('change',()=>{ $(id).value=fmtD(parseT($(id).value)); loopChanged(); rcChanged(); }); $(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $(id).blur(); $(id).dispatchEvent(new Event('change')); } }); });
+function loopChanged(){ rcUI(); if(playing){ const p=curPos(); pause(); offset=p; play(); } }
+$('rcLoop').onchange=loopChanged;
+$('rcSetA').onclick=()=>{ $('rcA').value=fmtD(curPos()); loopChanged(); rcChanged(); };
+$('rcSetB').onclick=()=>{ $('rcB').value=fmtD(curPos()); $('rcLoop').checked=true; loopChanged(); rcChanged(); };
+$('rcEarly').onclick=()=>rcSetShift(state.rcshift-10);
+$('rcLate').onclick=()=>rcSetShift(state.rcshift+10);
+$('rcPlay').onclick=()=>{ if(!buffer) return; if(rcScope()==='part') $('rcLoop').checked=true; if(playing) pause(); offset= rcScope()==='part'? rcSel()[0] : offset; rcUI(); play(); };
+$('rcOk').onclick=()=>{ const p=rcPending(); if(!p){ $('rcList').textContent='Choisis d’abord un décalage.'; return; } rcEdits.push(p); state.rcshift=0; $('s-rcshift').value=0; showVal(PARAMS.find(q=>q.id==='rcshift'),true); refreshVoice(); rcUI(); $('status').textContent='Recalage validé ('+(p.s>0?'+':'')+Math.round(p.s*1000)+' ms). Tu peux choisir une autre phrase.'; };
+$('rcUndo').onclick=()=>{ if(state.rcshift) rcSetShift(0); else if(rcEdits.length){ rcEdits.pop(); refreshVoice(); rcUI(); } };
+$('rcClear').onclick=()=>{ rcEdits=[]; state.rcshift=0; $('s-rcshift').value=0; showVal(PARAMS.find(q=>q.id==='rcshift'),true); refreshVoice(); rcUI(); $('status').textContent='Tous les recalages sont annulés : ta voix est revenue à sa place d’origine.'; };
+// sélection à la souris ou au doigt sur l’onde
+{ const cv=$('rcWave'), tAt=e=>{ const r=cv.getBoundingClientRect(); return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*(buffer?buffer.duration:0); };
+  cv.addEventListener('pointerdown',e=>{ if(!buffer) return; try{ cv.setPointerCapture(e.pointerId); }catch(_){} rcDrag={x0:e.clientX,t0:tAt(e)}; });
+  cv.addEventListener('pointermove',e=>{ if(!rcDrag) return; if(Math.abs(e.clientX-rcDrag.x0)>4){ const t=tAt(e); $('rcA').value=fmtD(Math.min(rcDrag.t0,t)); $('rcB').value=fmtD(Math.max(rcDrag.t0,t)); document.querySelector('input[name=rcScope][value=part]').checked=true; rcUI(); } });
+  cv.addEventListener('pointerup',e=>{ if(!rcDrag) return; const moved=Math.abs(e.clientX-rcDrag.x0)>4, t=tAt(e); rcDrag=null;
+    if(moved){ $('rcLoop').checked=true; offset=rcSel()[0]; loopChanged(); rcChanged(); }
+    else { const was=playing; if(was) pause(); offset=t; updateTime(); if(was) play(); drawWave(); } });
+}
+setInterval(()=>{ if(playing && rcHas()) drawWave(); },120);
+window.addEventListener('resize',()=>drawWave());
+
 // ---------- Table de mixage ----------
 function connectTracks(c,n){
   if(n.trk) n.trk.forEach(x=>{ try{ x.g.disconnect(); x.p.disconnect(); }catch(e){} });
@@ -612,7 +718,7 @@ function renderTracks(){
     const del=document.createElement('button'); del.className='ms'; del.textContent='✕'; del.title='Retirer la piste';
     m.onclick=()=>{ t.mute=!t.mute; m.classList.toggle('on',t.mute); applyAll(); };
     so.onclick=()=>{ t.solo=!t.solo; so.classList.toggle('on',t.solo); applyAll(); };
-    del.onclick=()=>{ if(!confirm('Retirer la piste « '+t.name+' » ?')) return; const was=playing; if(was) pause(); tracks=tracks.filter(x=>x!==t); renderTracks(); if(was) play(); applyAll(); };
+    del.onclick=()=>{ if(!confirm('Retirer la piste « '+t.name+' » ?')) return; const was=playing; if(was) pause(); tracks=tracks.filter(x=>x!==t); renderTracks(); if(was) play(); applyAll(); rcUI(); };
     h.append(nm,m,so,del); st.appendChild(h);
     st.appendChild(trackSlider(t,'vol','Volume',-30,6,0.5,'dB'));
     st.appendChild(trackSlider(t,'pan','Gauche / droite',-100,100,5,'%'));
@@ -627,7 +733,7 @@ $('addtrack').addEventListener('change',async e=>{
     const b=await ctx.decodeAudioData(await f.arrayBuffer());
     const was=playing; if(was) pause();
     tracks.push({id:Date.now(),name:f.name.replace(/\.[^.]+$/,''),buffer:b,vol:0,pan:0,mute:false,solo:false});
-    renderTracks(); if(was) play();
+    renderTracks(); if(was) play(); rcPeaks=null; rcUI();
     mixMsg('Piste ajoutée : '+f.name+'.');
   }catch(err){ mixMsg('Impossible de lire cette piste : '+err.message); }
   e.target.value='';
@@ -668,7 +774,7 @@ $('stemswav').onclick=async()=>{
 // ---------- Justesse : correction douce des fausses notes ----------
 let tuneW=null, tuneBusy=false, tuneOrig=null, tuneFixed=null, tuneOn=false;
 function tuneMsg(t){ $('tune-status').textContent=t; }
-function tuneReset(){ tuneOrig=null; tuneFixed=null; tuneOn=false; $('tune-ab').disabled=true; $('tune-ab').classList.remove('on'); $('tune-ab').textContent='Écouter sans correction'; tuneMsg(''); $('tune-btn').disabled=!buffer||!!job; }
+function tuneReset(){ vOrig=null; rcEdits=[]; if(typeof rcResetUI==='function') rcResetUI(); tuneOrig=null; tuneFixed=null; tuneOn=false; $('tune-ab').disabled=true; $('tune-ab').classList.remove('on'); $('tune-ab').textContent='Écouter sans correction'; tuneMsg(''); $('tune-btn').disabled=!buffer||!!job; }
 function tuneSet(kind,b){ const was=playing; if(was) pause(); if(kind==='sep'){ if(sep) sep.voice=b; } else buffer=b; if(was) play(); }
 function tuneWorker(){
   if(!tuneW){
@@ -681,9 +787,9 @@ function tuneEnd(){ tuneBusy=false; $('tune-btn').disabled=!buffer||!!job; $('se
 $('tune-btn').onclick=()=>{
   if(!buffer || tuneBusy || job) return;
   const kind=sep?'sep':'buf';
-  if(!tuneOrig || tuneOrig.kind!==kind) tuneOrig={kind, buf: kind==='sep'? sep.voice : buffer};
+  tuneOrig=ensureVOrig();
   const src=tuneOrig.buf, strength=state.tune/100;
-  if(strength<=0){ tuneSet(kind,src); tuneFixed=null; tuneOn=false; $('tune-ab').disabled=true; tuneMsg('Force à 0 % : ta voix reste sans correction.'); return; }
+  if(strength<=0){ tuneFixed=null; tuneOn=false; refreshVoice(); $('tune-ab').disabled=true; tuneMsg('Force à 0 % : ta voix reste sans correction.'); return; }
   const chans=[]; for(let c=0;c<src.numberOfChannels;c++) chans.push(new Float32Array(src.getChannelData(c)));
   tuneBusy=true; $('tune-btn').disabled=true; $('sep').disabled=true; $('file').disabled=true;
   tuneMsg('Correction en cours (force '+state.tune+' %)… Tu peux continuer à écouter.');
@@ -696,7 +802,7 @@ $('tune-btn').onclick=()=>{
     if(!tuneOrig || tuneOrig.buf!==src){ tuneEnd(); return; }   // morceau changé entre-temps
     const nb=ctx.createBuffer(d.outs.length, d.outs[0].length, src.sampleRate);
     d.outs.forEach((o,c)=>nb.copyToChannel(o,c));
-    tuneFixed=nb; tuneOn=true; tuneSet(kind,nb);
+    tuneFixed=nb; tuneOn=true; refreshVoice();
     $('tune-ab').disabled=false; $('tune-ab').classList.remove('on'); $('tune-ab').textContent='Écouter sans correction';
     tuneEnd();
     tuneMsg('Correction appliquée (force '+state.tune+' %) en '+Math.max(1,Math.round((Date.now()-t0)/1000))+' s. Écart moyen des notes tenues : '+Math.round(d.before)+' → '+Math.round(d.after)+' cents (100 cents = un demi-ton). '+(kind==='buf'?'La correction s’applique à tout le fichier. ':'La musique n’est pas modifiée. ')+'Elle est incluse dans les exports.');
@@ -705,7 +811,7 @@ $('tune-btn').onclick=()=>{
 };
 $('tune-ab').onclick=()=>{
   if(!tuneOrig || !tuneFixed) return;
-  tuneOn=!tuneOn; tuneSet(tuneOrig.kind, tuneOn? tuneFixed : tuneOrig.buf);
+  tuneOn=!tuneOn; refreshVoice();
   $('tune-ab').classList.toggle('on',!tuneOn); $('tune-ab').textContent= tuneOn? 'Écouter sans correction' : 'Écouter avec correction';
 };
 
@@ -810,7 +916,7 @@ function onWorker(e){
 $('sep').onclick=async ()=>{
   if(!buffer || job) return;
   const mode=document.querySelector('input[name=mode]:checked').value;
-  if(tuneOrig && tuneOrig.kind==='buf') buffer=tuneOrig.buf;   // on sépare toujours la prise d’origine
+  if(vOrig && vOrig.kind==='buf') buffer=vOrig.buf;   // on sépare toujours la prise d’origine
   tuneReset(); $('tune-btn').disabled=true;
   $('sep').disabled=true; $('file').disabled=true; $('sepcancel').style.display='';
   $('sepbar').style.display='block'; $('sepbar').value=0;
