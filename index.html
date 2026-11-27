@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal">
-<title>Mon Studio Vocal 5.4 bêta</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal"><title>Mon Studio Vocal 5.5 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -38,7 +37,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.4 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.5 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -91,6 +90,7 @@
   <div style="margin-bottom:8px">
     <label style="display:block;margin:4px 0"><input type="radio" name="mode" value="all" checked> Séparer toute la voix (voix principale + chœurs)</label>
     <label style="display:block;margin:4px 0"><input type="radio" name="mode" value="lead"> Retirer seulement la voix principale et garder les chœurs dans la musique</label>
+    <label style="display:block;margin:8px 0 4px"><input type="checkbox" id="sepclean" checked> Remettre la voix à niveau et la nettoyer après la séparation <span style="color:#666;font-size:.85rem">(coupe les basses de la musique restées dans la voix et atténue les bruits entre les phrases)</span></label>
   </div>
   <div class="row">
     <button id="sep" disabled>Séparer la voix et la musique</button>
@@ -194,18 +194,19 @@
 <div class="card">
   <h2>Table de mixage</h2>
   <p style="margin:0 0 6px;color:#666;font-size:.85rem">Chaque piste a son volume, sa position gauche/droite (panoramique), Muet (M) et Solo (S). Tu peux ajouter d’autres pistes : chœurs, instrument, autre prise… Elles démarrent toutes au début du morceau.</p>
-  <div class="strip" id="strip-v"><div class="strip-head"><strong id="strip-v-name">Voix</strong><button class="ms m" id="vmute">M</button><button class="ms s" id="vsolo">S</button></div><div id="g-mixv"></div></div>
-  <div class="strip" id="strip-m" style="display:none"><div class="strip-head"><strong>Musique</strong><button class="ms m" id="mmute">M</button><button class="ms s" id="msolo">S</button></div><div id="g-mixm"></div></div>
+  <div class="strip" id="strip-v"><div class="strip-head"><strong id="strip-v-name">Voix</strong><button class="ms dl1" id="dl-v" title="Télécharger cette piste en MP3" disabled>⬇ MP3</button><button class="ms m" id="vmute">M</button><button class="ms s" id="vsolo">S</button></div><div id="g-mixv"></div></div>
+  <div class="strip" id="strip-m" style="display:none"><div class="strip-head"><strong>Musique</strong><button class="ms dl1" id="dl-m" title="Télécharger cette piste en MP3">⬇ MP3</button><button class="ms m" id="mmute">M</button><button class="ms s" id="msolo">S</button></div><div id="g-mixm"></div></div>
   <div id="tracks"></div>
   <div class="row" style="margin-top:6px">
     <label class="row" style="gap:6px"><span>➕ Ajouter une piste :</span><input type="file" id="addtrack" accept="audio/*" disabled></label>
   </div>
   <div class="strip" style="background:#faf8fc"><div class="strip-head"><strong>Sortie générale (master)</strong></div><div id="g-master"></div>
-    <div style="color:#666;font-size:.85rem">Un limiteur protège la sortie, avec une marge de sécurité : le mixage évite la saturation.</div></div>
+    <div style="color:#666;font-size:.85rem">Un limiteur protège la sortie, avec une marge de sécurité : le mixage évite la saturation. Le volume général et le gauche/droite s’appliquent aussi aux pistes exportées séparément.</div></div>
   <div class="row" style="margin-top:10px">
     <button id="mixwav" class="primary" disabled>Exporter le mixage en WAV</button>
     <button id="mixmp3" class="primary" disabled>Exporter le mixage en MP3</button>
     <button id="stemswav" disabled>Exporter chaque piste en WAV (pour Cubase)</button>
+    <button id="stemsmp3" disabled>Exporter chaque piste en MP3</button>
   </div>
   <div id="mixstatus" style="color:#666;font-size:.9rem;margin-top:6px"></div>
 </div>
@@ -636,7 +637,7 @@ $('file').addEventListener('change', async e=>{
     const data=await f.arrayBuffer();
     buffer=await ctx.decodeAudioData(data);
     offset=0; fileName=f.name; measureRef(buffer); clearSep(); $('sep').disabled=false; tuneReset();
-    ['play','stop','ab','seek','mixwav','mixmp3','stemswav','addtrack','testStart'].forEach(id=>$(id).disabled=false); $('strip-v-name').textContent='Morceau (voix + musique)';
+    ['play','stop','ab','seek','mixwav','mixmp3','stemswav','stemsmp3','dl-v','addtrack','testStart'].forEach(id=>$(id).disabled=false); $('strip-v-name').textContent='Morceau (voix + musique)';
     $('status').textContent=`Chargé : ${f.name} (${fmt(buffer.duration)}). Bouge les curseurs pendant la lecture.`;
     songKey=f.name+'|'+Math.round(buffer.duration); $('songsave').disabled=false; restoreSong();
     updateTime();
@@ -882,7 +883,8 @@ function renderTracks(){
     m.onclick=()=>{ t.mute=!t.mute; m.classList.toggle('on',t.mute); applyAll(); };
     so.onclick=()=>{ t.solo=!t.solo; so.classList.toggle('on',t.solo); applyAll(); };
     del.onclick=()=>{ if(!confirm('Retirer la piste « '+t.name+' » ?')) return; const was=playing; if(was) pause(); tracks=tracks.filter(x=>x!==t); renderTracks(); if(was) play(); applyAll(); rcUI(); };
-    h.append(nm,m,so,del); st.appendChild(h);
+    const dl=document.createElement('button'); dl.className='ms dl1'; dl.textContent='⬇ MP3'; dl.title='Télécharger cette piste en MP3'; dl.onclick=()=>exportOne('t'+t.id);
+    h.append(nm,dl,m,so,del); st.appendChild(h);
     st.appendChild(trackSlider(t,'vol','Volume',-30,6,0.5,'dB'));
     st.appendChild(trackSlider(t,'pan','Gauche / droite',-100,100,5,'%'));
     box.appendChild(st);
@@ -902,37 +904,61 @@ $('addtrack').addEventListener('change',async e=>{
   e.target.value='';
 });
 const baseName=()=>(fileName||'morceau').replace(/\.[^.]+$/,'');
+const EXP_IDS=['mixwav','mixmp3','stemswav','stemsmp3'];
+function expLock(on){ EXP_IDS.forEach(id=>$(id).disabled=on); document.querySelectorAll('.dl1').forEach(b=>b.disabled=on); }
+function mp3Margin(b){ for(let c=0;c<b.numberOfChannels;c++){ const d=b.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=0.85; } return b; }   // marge pour l’encodage MP3
 async function exportMix(fmtOut){
   if(!buffer) return;
-  ['mixwav','mixmp3','stemswav'].forEach(id=>$(id).disabled=true);
+  expLock(true);
   try{
     mixMsg('Mixage en cours…');
     const out=await renderMix({voice:true,music:true,tracks,respect:true});
     const name=baseName()+' - mixage.'+(fmtOut==='mp3'?'mp3':'wav');
-    if(fmtOut==='mp3'){ for(let c=0;c<out.numberOfChannels;c++){ const d=out.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=0.85; } saveBlob(await toMp3(out,256,'mixage',mixMsg),name); }   // marge pour l’encodage MP3 else saveBlob(toWav(out),name);
+    if(fmtOut==='mp3') saveBlob(await toMp3(mp3Margin(out),256,'mixage',mixMsg),name);
+    else saveBlob(toWav(out),name);
     mixMsg('Export terminé : « '+name+' ».');
   }catch(err){ mixMsg('Erreur d’export : '+(err&&err.message||err)); }
-  ['mixwav','mixmp3','stemswav'].forEach(id=>$(id).disabled=false);
+  expLock(false);
 }
 $('mixwav').onclick=()=>exportMix('wav');
 $('mixmp3').onclick=()=>exportMix('mp3');
-$('stemswav').onclick=async()=>{
+// pistes séparées : voix (ou morceau), musique, pistes ajoutées — avec leurs réglages, sans muet/solo
+function stemJobs(){
+  const jobs=[{key:'v',name:sep?'voix':'morceau',opts:{voice:true,music:false,tracks:[]}}];
+  if(sep) jobs.push({key:'m',name:'musique',opts:{voice:false,music:true,tracks:[]}});
+  tracks.forEach(t=>jobs.push({key:'t'+t.id,name:t.name,opts:{voice:false,music:false,tracks:[t]}}));
+  return jobs.map((j,i)=>({...j,num:i+1}));
+}
+async function exportStem(j,fmtOut,label){
+  const b=await renderMix(j.opts), name=baseName()+' - '+String(j.num).padStart(2,'0')+' '+j.name+'.'+fmtOut;
+  if(fmtOut==='mp3') saveBlob(await toMp3(mp3Margin(b),256,label||j.name,mixMsg),name); else saveBlob(toWav(b),name);
+  return name;
+}
+async function exportStems(fmtOut){
   if(!buffer) return;
-  ['mixwav','mixmp3','stemswav'].forEach(id=>$(id).disabled=true);
+  expLock(true);
   try{
-    const jobs=[[sep?'voix':'morceau',{voice:true,music:false,tracks:[]}]];
-    if(sep) jobs.push(['musique',{voice:false,music:true,tracks:[]}]);
-    tracks.forEach(t=>jobs.push([t.name,{voice:false,music:false,tracks:[t]}]));
+    const jobs=stemJobs();
     for(let i=0;i<jobs.length;i++){
-      mixMsg('Piste '+(i+1)+' / '+jobs.length+' : '+jobs[i][0]+'…');
-      const b=await renderMix(jobs[i][1]);
-      saveBlob(toWav(b), baseName()+' - '+String(i+1).padStart(2,'0')+' '+jobs[i][0]+'.wav');
-      await new Promise(z=>setTimeout(z,700));
+      mixMsg('Piste '+(i+1)+' / '+jobs.length+' : '+jobs[i].name+'…');
+      await exportStem(jobs[i],fmtOut,'piste '+(i+1)+' / '+jobs.length+' ('+jobs[i].name+')');
+      await new Promise(z=>setTimeout(z,900));
     }
-    mixMsg(jobs.length+' pistes exportées en WAV. Elles commencent toutes au même instant : dans Cubase, place-les au début du projet pour qu’elles restent calées. Si toutes n’arrivent pas, autorise les téléchargements multiples.');
+    mixMsg(jobs.length+' pistes exportées en '+fmtOut.toUpperCase()+'. Elles commencent toutes au même instant : dans Cubase, place-les au début du projet pour qu’elles restent calées. Si toutes n’arrivent pas, autorise les téléchargements multiples, ou utilise le bouton « ⬇ MP3 » de chaque piste.');
   }catch(err){ mixMsg('Erreur d’export : '+(err&&err.message||err)); }
-  ['mixwav','mixmp3','stemswav'].forEach(id=>$(id).disabled=false);
-};
+  expLock(false);
+}
+$('stemswav').onclick=()=>exportStems('wav');
+$('stemsmp3').onclick=()=>exportStems('mp3');
+async function exportOne(key){
+  if(!buffer) return; const j=stemJobs().find(x=>x.key===key); if(!j) return;
+  expLock(true);
+  try{ mixMsg('Préparation de la piste « '+j.name+' »…'); const name=await exportStem(j,'mp3'); mixMsg('Piste téléchargée : « '+name+' ».'); }
+  catch(err){ mixMsg('Erreur d’export : '+(err&&err.message||err)); }
+  expLock(false);
+}
+$('dl-v').onclick=()=>exportOne('v');
+$('dl-m').onclick=()=>exportOne('m');
 
 // ---------- Justesse : correction douce des fausses notes ----------
 let tuneW=null, tuneBusy=false, tuneOrig=null, tuneFixed=null, tuneOn=false;
@@ -1042,7 +1068,7 @@ $('load').onclick=()=>{ const s=localStorage.getItem('msv-preset'); if(s){ setSt
 
 // ---------- Séparation IA dans un worker (la page reste utilisable) ----------
 function sepMsg(t){ $('sepstatus').textContent=t; }
-function clearSep(){ sep=null; $('strip-m').style.display='none'; if(buffer) $('strip-v-name').textContent='Morceau (voix + musique)';  $('dlv').disabled=true; $('dlm').disabled=true; $('mp3').disabled=true; $('sepbar').style.display='none'; sepMsg(''); applyAll(); }
+function clearSep(){ sep=null; sepRaw=null; $('strip-m').style.display='none'; if(buffer) $('strip-v-name').textContent='Morceau (voix + musique)';  $('dlv').disabled=true; $('dlm').disabled=true; $('mp3').disabled=true; $('sepbar').style.display='none'; sepMsg(''); applyAll(); }
 async function to44k(b){
   const off=new OfflineAudioContext(2, Math.ceil(b.duration*44100), 44100);
   const x=off.createBufferSource(); x.buffer=b; x.connect(off.destination); x.start();
@@ -1069,13 +1095,53 @@ function onWorker(e){
     const n=d.vL.length, voice=ctx.createBuffer(2,n,44100), music=ctx.createBuffer(2,n,44100);
     voice.copyToChannel(d.vL,0); voice.copyToChannel(d.vR,1); music.copyToChannel(d.mL,0); music.copyToChannel(d.mR,1);
     const wasPlaying=playing; if(wasPlaying) pause();
-    sep={voice,music}; measureRef(voice); tuneReset(); $('strip-m').style.display=''; $('strip-v-name').textContent='Voix';
+    sepRaw={voice,music}; const fx=buildSep(); measureRef(sep.voice); tuneReset(); $('strip-m').style.display=''; $('strip-v-name').textContent='Voix';
      $('dlv').disabled=false; $('dlm').disabled=false; $('mp3').disabled=false; $('sepbar').value=1;
     const secs=Math.round((Date.now()-job.t0)/1000), mode=job.mode; endJob();
-    sepMsg('Séparation terminée en '+(secs>=120? Math.round(secs/60)+' min':secs+' s')+'. Règle la voix et la musique dans la table de mixage. '+(mode==='lead'?'Les chœurs sont dans la piste musique. ':'')+'Les effets s’appliquent maintenant à la voix seule.');
+    sepMsg('Séparation terminée en '+(secs>=120? Math.round(secs/60)+' min':secs+' s')+'. '+fx+' Règle la voix et la musique dans la table de mixage. '+(mode==='lead'?'Les chœurs sont dans la piste musique. ':'')+'Les effets s’appliquent maintenant à la voix seule.');
     applyAll(); if(wasPlaying) play();
   }
 }
+
+// ---------- Voix séparée : remise à niveau + nettoyage ----------
+let sepRaw=null;
+function cleanSep(voice,music){
+  const sr=voice.sampleRate, n=voice.length, ch=voice.numberOfChannels;
+  const V=[]; for(let c=0;c<ch;c++) V.push(new Float32Array(voice.getChannelData(c)));
+  // 1) coupe-bas 90 Hz (Butterworth 12 dB/oct) : retire la basse et la grosse caisse restées dans la voix
+  { const w=2*Math.PI*90/sr, q=Math.SQRT1_2, al=Math.sin(w)/(2*q), cs=Math.cos(w), a0=1+al;
+    const b0=(1+cs)/2/a0, b1=-(1+cs)/a0, b2=b0, a1=-2*cs/a0, a2=(1-al)/a0;
+    for(const x of V){ let x1=0,x2=0,y1=0,y2=0; for(let i=0;i<n;i++){ const x0=x[i], y=b0*x0+b1*x1+b2*x2-a1*y1-a2*y2; x2=x1; x1=x0; y2=y1; y1=y; x[i]=y; } } }
+  // 2) niveau par tranches de 10 ms
+  const H=Math.round(sr*0.01), F=Math.ceil(n/H), lv=new Float32Array(F);
+  for(let f=0;f<F;f++){ let e=0; const a=f*H, b=Math.min(n,a+2*H); for(let i=a;i<b;i++){ let m=0; for(let c=0;c<ch;c++) m+=V[c][i]; m/=ch; e+=m*m; } lv[f]=10*Math.log10(e/Math.max(1,b-a)+1e-12); }
+  const srt=Array.from(lv).sort((x,y)=>x-y), ref=srt[Math.floor(F*0.9)];
+  // 3) expandeur doux : sous (réf − 28 dB), la voix est surtout du résidu de musique → atténué jusqu’à −18 dB
+  const thr=ref-28, gF=new Float32Array(F);
+  for(let f=0;f<F;f++){ let L=lv[f]; for(let k=1;k<=2&&f+k<F;k++) L=Math.max(L,lv[f+k]);   // anticipation 20 ms : les attaques restent intactes
+    gF[f]= L>=thr? 0 : Math.max(-18,(L-thr)*1.5); }
+  const g=new Float32Array(F); { let cur=0; const up=Math.exp(-1/0.5), dn=Math.exp(-1/12);   // ouverture 5 ms, fermeture 120 ms
+    for(let f=0;f<F;f++){ const t=gF[f]; cur= t>cur? t+(cur-t)*up : t+(cur-t)*dn; g[f]=cur; } }
+  for(let i=0;i<n;i++){ const p=i/H, f=Math.min(F-1,Math.floor(p)), f2=Math.min(F-1,f+1), t=p-f, gl=Math.pow(10,(g[f]*(1-t)+g[f2]*t)/20); for(let c=0;c<ch;c++) V[c][i]*=gl; }
+  // 4) remise à niveau : voix chantée ≈ 2 dB au-dessus de la musique, sans dépasser 0,95 en crête
+  const act=(arr)=>{ let e=0,c=0; for(let f=0;f<F;f++) if(lv[f]>ref-20){ e+=Math.pow(10,lv[f]/10); c++; } return c? 10*Math.log10(e/c) : -60; };
+  const vAct=act(), mLv=(()=>{ const M=music.getChannelData(0), M2=music.getChannelData(music.numberOfChannels-1); let e=0,c=0; for(let f=0;f<F;f++) if(lv[f]>ref-20){ const a=f*H,b=Math.min(n,a+H); for(let i=a;i<b;i++){ const m=(M[i]+M2[i])/2; e+=m*m; c++; } } return c? 10*Math.log10(e/c+1e-12) : -60; })();
+  let pk=0; for(const x of V) for(let i=0;i<n;i++){ const a=Math.abs(x[i]); if(a>pk) pk=a; }
+  let want=Math.min(12,Math.max(0,(mLv+2)-vAct)), gv=want, gm=0;
+  const room=pk>0? 20*Math.log10(0.95/pk) : 12; if(gv>room){ gm=-(gv-Math.max(0,room)); gv=Math.max(0,room); }   // pas assez de marge : on baisse un peu la musique
+  const out=new AudioBuffer({numberOfChannels:ch,length:n,sampleRate:sr}), kv=Math.pow(10,gv/20);
+  for(let c=0;c<ch;c++){ const x=V[c]; for(let i=0;i<n;i++) x[i]*=kv; out.copyToChannel(x,c); }
+  let mus=music; if(gm<-0.1){ mus=new AudioBuffer({numberOfChannels:music.numberOfChannels,length:music.length,sampleRate:music.sampleRate}); const km=Math.pow(10,gm/20); for(let c=0;c<music.numberOfChannels;c++){ const x=new Float32Array(music.getChannelData(c)); for(let i=0;i<x.length;i++) x[i]*=km; mus.copyToChannel(x,c); } }
+  return { voice:out, music:mus, gv, gm };
+}
+function buildSep(){
+  if(!sepRaw) return '';
+  if(!$('sepclean').checked){ sep={voice:sepRaw.voice, music:sepRaw.music}; return 'Voix laissée telle que sortie de l’IA.'; }
+  const r=cleanSep(sepRaw.voice,sepRaw.music); sep={voice:r.voice, music:r.music};
+  const f=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1).replace('.',',')+' dB';
+  return 'Voix nettoyée et remontée de '+f(r.gv)+(r.gm<-0.1? ' (musique baissée de '+f(r.gm).slice(1)+' pour éviter la saturation)':'')+'.';
+}
+$('sepclean').addEventListener('change',()=>{ if(!sepRaw||job) return; const was=playing; if(was) pause(); const t=buildSep(); measureRef(sep.voice); tuneReset(); if(was) play(); sepMsg(t+' (la correction des notes et le recalage sont à refaire).'); });
 $('sep').onclick=async ()=>{
   if(!buffer || job) return;
   const mode=document.querySelector('input[name=mode]:checked').value;
@@ -1099,7 +1165,7 @@ $('dlv').onclick=()=> sep && dl(sep.voice,'voix-seule.wav');
 $('dlm').onclick=()=> sep && dl(sep.music,'musique-seule.wav');
 
 // ---------- Export MP3 (voix et musique séparées) ----------
-const LAME_URL=(location.protocol==='file:')? 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js' : 'lame.min.js';
+const LAME_URL=location.protocol==='file:'?'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js':'lame.min.js';
 function loadLame(){ return window.lamejs? Promise.resolve(window.lamejs) : new Promise((ok,ko)=>{ const sc=document.createElement('script'); sc.src=LAME_URL; sc.onload=()=>ok(window.lamejs); sc.onerror=()=>ko(new Error('encodeur MP3 introuvable (connexion internet ?)')); document.head.appendChild(sc); }); }
 // Rend une seule piste avec les réglages actuels (effets + volume pour la voix, volume pour la musique)
 async function renderStem(which){ return renderMix({voice:which==='voice', music:which==='music', tracks:[]}); }
