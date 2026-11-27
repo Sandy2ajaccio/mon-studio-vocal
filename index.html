@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal">
-<title>Mon Studio Vocal 5.3 bêta</title>
+<title>Mon Studio Vocal 5.4 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -38,7 +38,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.3 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.4 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -173,6 +173,7 @@
 <div class="card">
   <h2>Couleur</h2>
   <div id="g-col"></div>
+  <p style="margin:4px 0 0;color:#666;font-size:.85rem"><b>Articulation</b> : les mots ressortent mieux, et la réverbération s’efface pendant que tu chantes pour revenir entre les phrases. <b>Moins nasale</b> : vers la droite, la voix sonne moins « dans le nez ».</p>
 </div>
 <div class="card">
   <h2>Dynamique</h2>
@@ -413,6 +414,8 @@ const PARAMS = [
   {id:'warmth',  g:'col', label:'Chaleur (graves)', min:-12, max:12, step:0.5, unit:' dB', def:0},
   {id:'body',    g:'col', label:'Médium (corps)',   min:-12, max:12, step:0.5, unit:' dB', def:0},
   {id:'clarity', g:'col', label:'Clarté (aigus)',   min:-12, max:12, step:0.5, unit:' dB', def:0},
+  {id:'artic',   g:'col', label:'Articulation',  min:0, max:100, step:5, unit:' %', def:0},
+  {id:'warm2',   g:'col', label:'Moins nasale',  min:-6, max:9, step:0.5, unit:' dB', def:0},
   {id:'soft',    g:'col', label:'Douceur (sifflantes)', min:0, max:100, step:1, unit:' %', def:0},
   {id:'comp',    g:'dyn', label:'Régularité',       min:0,   max:100,step:1,   unit:' %',  def:0},
   {id:'reverb',  g:'amb', label:'Réverbération',    min:0,   max:100,step:1,   unit:' %',  def:0},
@@ -424,7 +427,7 @@ const PARAMS = [
   {id:'echofb',  g:'amb', label:'Répétitions',      min:0,   max:85, step:1,   unit:' %',  def:30},
 ];
 const PRESETS = {
-  'Ma voix intérieure': {volume:0, inner:70, warmth:0, body:0, clarity:0, soft:0, comp:20, reverb:10, revlen:1.0, echo:0, echotime:300, echofb:20},
+  'Ma voix intérieure': {volume:0, inner:70, artic:20, warmth:0, body:0, clarity:0, soft:0, comp:20, reverb:10, revlen:1.0, echo:0, echotime:300, echofb:20},
   'Feutré':    {volume:0, warmth:3, body:-1.5,clarity:-3, soft:60, comp:40, reverb:18, revlen:1.4, echo:0,  echotime:300, echofb:15},
   'Naturel':   {soft:0, volume:0, warmth:1, body:0, clarity:1.5, comp:25, reverb:12, revlen:1.2, echo:0,  echotime:300, echofb:20},
   'Intimiste': {soft:0, volume:0, warmth:4, body:-1,clarity:-2,  comp:40, reverb:20, revlen:1.0, echo:0,  echotime:250, echofb:15},
@@ -458,7 +461,7 @@ function setState(obj){
 }
 function refreshMS(){ ['vmute','vsolo','mmute','msolo'].forEach(k=>{ const b=document.getElementById(k); if(b) b.classList.toggle('on',!!state[k]); }); }
 // chaque préréglage part d’une base neutre (couleur, dynamique, ambiance, voix intérieure) ; ton timbre (corps, brillance) est gardé
-const PRESET_BASE={}; ['warmth','body','clarity','soft','comp','reverb','revlen','pre','duck','echo','echotime','echofb','inner'].forEach(k=>PRESET_BASE[k]=PARAMS.find(p=>p.id===k).def);
+const PRESET_BASE={}; ['warmth','body','clarity','soft','artic','warm2','comp','reverb','revlen','pre','duck','echo','echotime','echofb','inner'].forEach(k=>PRESET_BASE[k]=PARAMS.find(p=>p.id===k).def);
 function loadMonTimbre(){ try{ return JSON.parse(localStorage.getItem('msv-mon-timbre')); }catch(e){ return null; } }
 function renderPresets(){
   const box=$('presets'); box.innerHTML='';
@@ -502,7 +505,18 @@ const DUCK_SRC=`class Duck extends AudioWorkletProcessor{
    this.k+=(pk-this.k)*(pk>this.k?this.kA:this.kR);const lv=Math.min(1,this.k/(ref*.8+1e-6)),dt=1-a*.6*lv;this.dk+=(dt-this.dk)*this.cT;
    for(let c=0;c<o.length;c++){const oc=o[c];if(!w.length){oc.fill(0,b0,b0+B);continue}const sw=w[Math.min(c,w.length-1)];for(let i=b0;i<b0+B;i++)oc[i]=sw[i]*this.dk}}
   return true}}
-registerProcessor("duck",Duck);`;
+registerProcessor("duck",Duck);
+class Artic extends AudioWorkletProcessor{
+ static get parameterDescriptors(){return[{name:"amt",defaultValue:0,minValue:0,maxValue:1,automationRate:"k-rate"}]}
+ constructor(){super();const r=sampleRate,B=16,c=t=>1-Math.exp(-B/(t*r));this.f=0;this.s=0;this.gt=1;this.fR=Math.exp(-B/(.04*r));this.cS=c(.3);this.cT=c(.004)}
+ process(inp,out,p){const v=inp[0]||[],o=out[0],n=o[0].length,B=16,a=p.amt[0];
+  if(!v.length){for(const ch of o)ch.fill(0);return true}
+  for(let b0=0;b0<n;b0+=B){let pk=0;for(let c=0;c<v.length;c++)for(let i=b0;i<b0+B;i++){const q=Math.abs(v[c][i]);if(q>pk)pk=q}
+   this.f=pk>this.f?pk:this.f*this.fR;this.s+=(pk-this.s)*this.cS;
+   const rr=this.f/(this.s+1e-6),tgt=1+a*.6*Math.min(1,Math.max(0,(rr-1.3)/1.2));this.gt+=(tgt-this.gt)*this.cT;
+   for(let c=0;c<o.length;c++){const sv=v[Math.min(c,v.length-1)],oc=o[c];for(let i=b0;i<b0+B;i++)oc[i]=sv[i]*this.gt}}
+  return true}}
+registerProcessor("artic",Artic);`;
 const DUCK_URL='data:application/javascript;base64,'+btoa(unescape(encodeURIComponent(DUCK_SRC)));
 const wkOK=new WeakSet();
 async function prepWK(c){ if(wkOK.has(c)) return true; try{ await c.audioWorklet.addModule(DUCK_URL); wkOK.add(c); return true; }catch(e){ return false; } }
@@ -530,6 +544,7 @@ function buildChain(c, s){
   n.tLow=bqf('lowshelf',200); n.tMid=bqf('peaking',400,0.6); n.tHi=bqf('highshelf',3500); n.tPr=bqf('peaking',2500,0.8);   // mon timbre
   n.iLow=bqf('lowshelf',180); n.iMid=bqf('peaking',450,0.8); n.iPr=bqf('peaking',3000,1); n.iHi=bqf('highshelf',7000);     // voix intérieure
   n.match=c.createGain();   // égalisation de volume pendant le test du timbre
+  n.nasal=bqf('peaking',1050,1.3);   // moins nasale (4.8)
   n.pres=c.createBiquadFilter(); n.pres.type='peaking'; n.pres.frequency.value=3000; n.pres.Q.value=1;
   n.satIn=c.createGain(); n.satDry=c.createGain(); n.satWet=c.createGain(); n.satOut=c.createGain();
   n.shaper=c.createWaveShaper(); { const k=3, N=2048, cu=new Float32Array(N); for(let i=0;i<N;i++){ const x=i/(N-1)*2-1; cu[i]=Math.tanh(k*x)/Math.tanh(k); } n.shaper.curve=cu; n.shaper.oversample='4x'; }
@@ -554,9 +569,11 @@ function buildChain(c, s){
   n.original=c.createGain();    // sortie originale (A/B)
   n.master=c.createGain();
 
-  n.input.connect(n.hp); n.hp.connect(n.tLow); n.tLow.connect(n.tMid); n.tMid.connect(n.tHi); n.tHi.connect(n.tPr); n.tPr.connect(n.iLow); n.iLow.connect(n.iMid); n.iMid.connect(n.iPr); n.iPr.connect(n.iHi); n.iHi.connect(n.low); n.low.connect(n.mid); n.mid.connect(n.pres); n.pres.connect(n.high); n.high.connect(n.deess); n.deess.connect(n.air); n.air.connect(n.satIn); n.satIn.connect(n.satDry); n.satIn.connect(n.shaper); n.shaper.connect(n.satWet); n.satDry.connect(n.satOut); n.satWet.connect(n.satOut); n.satOut.connect(n.comp); n.comp.connect(n.makeup);
+  n.input.connect(n.hp); n.hp.connect(n.tLow); n.tLow.connect(n.tMid); n.tMid.connect(n.tHi); n.tHi.connect(n.tPr); n.tPr.connect(n.iLow); n.iLow.connect(n.iMid); n.iMid.connect(n.iPr); n.iPr.connect(n.iHi); n.iHi.connect(n.low); n.low.connect(n.mid); n.mid.connect(n.nasal); n.nasal.connect(n.pres); n.pres.connect(n.high); n.high.connect(n.deess); n.deess.connect(n.air); n.air.connect(n.satIn); n.satIn.connect(n.satDry); n.satIn.connect(n.shaper); n.shaper.connect(n.satWet); n.satDry.connect(n.satOut); n.satWet.connect(n.satOut); n.satOut.connect(n.comp); n.comp.connect(n.makeup);
   n.makeup.connect(n.dblSend); n.dblL.connect(n.processed); n.dblR.connect(n.processed);
-  n.makeup.connect(n.dry); n.dry.connect(n.processed);
+  n.artic=null; if(wkOK.has(c)){ try{ n.artic=new AudioWorkletNode(c,'artic',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2]}); }catch(e){ n.artic=null; } }
+  if(n.artic){ n.makeup.connect(n.artic); n.artic.connect(n.dry); } else n.makeup.connect(n.dry);
+  n.dry.connect(n.processed);
   n.makeup.connect(n.revSend); n.revSend.connect(n.pd); n.pd.connect(n.rvHp); n.rvHp.connect(n.conv); n.conv.connect(n.rvLp); n.rvLp.connect(n.wetBus);
   n.makeup.connect(n.echoSend); n.echoSend.connect(n.delay); n.delay.connect(n.echoTone); n.echoTone.connect(n.fb); n.fb.connect(n.delay); n.echoTone.connect(n.wetBus);
   n.duck=null; if(wkOK.has(c)){ try{ n.duck=new AudioWorkletNode(c,'duck',{numberOfInputs:2,numberOfOutputs:1,outputChannelCount:[2]}); }catch(e){ n.duck=null; } }
@@ -580,7 +597,9 @@ function setParams(n,s,c,instant){
   set(n.comp.threshold,-50*k); set(n.comp.ratio,1+11*k); set(n.comp.knee,10);
   set(n.makeup.gain,dB(14*k));
   set(n.revSend.gain,(s.reverb/100)*0.8); set(n.dry.gain,1); set(n.pd.delayTime,(s.pre||0)/1000);
-  if(n.duck){ n.duck.parameters.get('amt').value=(s.duck||0)/100; n.duck.parameters.get('ref').value=Math.max(1e-4,voiceRef); }
+  set(n.nasal.gain,-(s.warm2||0));
+  if(n.artic) n.artic.parameters.get('amt').value=(s.artic||0)/100;
+  if(n.duck){ n.duck.parameters.get('amt').value=Math.max(s.duck||0,s.artic||0)/100; n.duck.parameters.get('ref').value=Math.max(1e-4,voiceRef); }
   set(n.echoSend.gain,(s.echo/100)*0.8);
   set(n.delay.delayTime,s.echotime/1000); set(n.fb.gain,s.echofb/100);
   set(n.master.gain,dB(s.volume)); set(n.voiceAdj.gain,(sep?0:dB(s.voice)-1)); set(n.voiceVol.gain,dB(s.vvol)); set(n.music.gain,dB(s.mvol));
