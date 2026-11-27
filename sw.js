@@ -1,7 +1,7 @@
 // Service worker de Mon Studio Vocal
 // À chaque nouvelle version publiée, change le numéro ci-dessous (v6 -> v7…)
 // pour que les téléphones récupèrent les nouveaux fichiers.
-const CACHE = "studio-vocal-v14";
+const CACHE = "studio-vocal-v15";
 const FICHIERS = ["./", "index.html", "sep-core.js", "lame.min.js", "manifest.json", "icon-192.png", "icon-512.png"];
 
 // Installation : met tous les fichiers de l'application en cache (fonctionnement hors connexion)
@@ -10,11 +10,11 @@ self.addEventListener("install", e => {
   self.skipWaiting();
 });
 
-// Activation : supprime les anciennes versions du cache
+// Activation : supprime les anciennes versions du cache (les modèles IA, rangés à part, sont gardés)
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x))))
+      .then(k => Promise.all(k.filter(x => x !== CACHE && x.startsWith("studio-vocal-")).map(x => caches.delete(x))))
       .then(() => self.clients.claim())
   );
 });

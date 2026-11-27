@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Mon Studio Vocal",
   "short_name": "Studio Vocal",
-  "description": "Retouche tes prises chantées et règle séparément le volume de ta voix et de la musique, sans dénaturer ton timbre.",
+  "description": "Studio vocal : retouche, justesse douce, séparation voix/musique par IA et mixage de tes prises chantées, sans dénaturer ton timbre.",
   "lang": "fr",
   "dir": "ltr",
   "start_url": "./",
