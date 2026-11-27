@@ -1,7 +1,7 @@
 // Service worker de Mon Studio Vocal
 // À chaque nouvelle version publiée, change le numéro ci-dessous (v6 -> v7…)
 // pour que les téléphones récupèrent les nouveaux fichiers.
-const CACHE = "studio-vocal-v20";
+const CACHE = "studio-vocal-v21";
 const FICHIERS = ["./", "index.html", "sep-core.js", "lame.min.js", "manifest.json", "icon-192.png", "icon-512.png"];
 
 // Installation : met tous les fichiers de l'application en cache (fonctionnement hors connexion)
@@ -24,7 +24,7 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: "no-cache" })   // toujours vérifier auprès du serveur : sinon le navigateur garde l'ancienne page 10 min
       .then(r => {
         if (r.ok) { const copie = r.clone(); caches.open(CACHE).then(c => c.put(req, copie)); }
         return r;

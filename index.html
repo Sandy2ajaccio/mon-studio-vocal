@@ -1239,8 +1239,8 @@ function toWav(b){
 <script>
 if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){
   const had=!!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(had){ const e=document.getElementById('status'); if(e) e.textContent='Nouvelle version de l’application installée. Ferme-la et rouvre-la pour en profiter.'; } });
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{ try{ r.update(); }catch(e){} document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') try{ r.update(); }catch(e){} }); }).catch(()=>{});
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(had && !document.getElementById('majBar')){ const b=document.createElement('div'); b.id='majBar'; b.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;background:#5a2d82;color:#fff;padding:10px 12px;border-radius:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,.25);font-size:.95rem'; b.innerHTML='<span>Une nouvelle version est disponible.</span>'; const k=document.createElement('button'); k.textContent='Mettre à jour maintenant'; k.style.cssText='background:#fff;color:#5a2d82;border:0;border-radius:8px;padding:8px 10px;font-weight:600'; k.onclick=()=>location.reload(); b.appendChild(k); document.body.appendChild(b); } });
 }
 </script>
 </body>
