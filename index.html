@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal">
-<title>Mon Studio Vocal 5.1 bêta</title>
+<title>Mon Studio Vocal 5.3 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -38,7 +38,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.1 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.3 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -141,6 +141,25 @@
   <div id="tune-status" style="color:#666;font-size:.9rem;margin-top:6px"></div>
 </div>
 
+<div class="card" id="timbre-card">
+  <h2>Mon timbre et ma voix intérieure</h2>
+  <div id="g-timbre"></div>
+  <p style="margin:2px 0 8px;color:#666;font-size:.85rem">Corps et Brillance : le caractère de ta voix, réglé par le test ci-dessous. Voix intérieure : ta voix comme tu l’entends de l’intérieur, graves profonds, aigus voilés.</p>
+  <div id="testIntro">
+    <p style="margin:0 0 8px">Comme chez l’opticien : tu écoutes deux versions du même passage et tu choisis celle qui te ressemble le plus. 10 choix, et ton préréglage « Mon timbre » est créé.</p>
+    <button id="testStart" class="primary" disabled>Commencer le test du timbre</button>
+    <span style="color:#666;font-size:.85rem"> Utilise de préférence un casque. Le test utilise les 20 secondes à partir de la position de lecture.</span>
+  </div>
+  <div id="testBox" style="display:none;border:1px solid var(--line);border-radius:8px;padding:10px">
+    <div class="row" style="justify-content:space-between"><b id="tStep">Choix 1 / 10</b><button id="tStop">Arrêter le test</button></div>
+    <progress id="tProg" max="10" value="0" style="width:100%;margin:8px 0"></progress>
+    <p style="margin:0 0 8px;color:#666;font-size:.85rem">Écoute A puis B (autant de fois que tu veux), puis choisis. <b>Tu n’entends pas de différence ? Appuie sur « Pareil » : l’écart sera agrandi au tour suivant.</b> Les deux versions sont au même volume.</p>
+    <div class="row"><button id="tA">▶ Écouter A</button><button id="tB">▶ Écouter B</button><button id="tO">Écouter l’original</button></div>
+    <div class="row" style="margin-top:8px"><button id="pA" class="primary">A me ressemble</button><button id="pB" class="primary">B me ressemble</button><button id="pS">Pareil</button></div>
+    <div id="tMsg" style="color:#666;font-size:.9rem;margin-top:6px"></div>
+  </div>
+</div>
+
 <div class="card">
   <h2>Préréglages</h2>
   <div class="row" id="presets"></div>
@@ -161,7 +180,9 @@
 </div>
 <div class="card">
   <h2>Ambiance</h2>
+  <div class="row" id="rooms" style="margin-bottom:6px"><span style="color:#666">Lieu :</span><button data-room="piece">Pièce</button><button data-room="eglise">Église</button><button data-room="cathedrale">Cathédrale</button></div>
   <div id="g-amb"></div>
+  <p style="margin:4px 0 0;color:#666;font-size:.85rem">Choisis un lieu : ta voix reste la même, seul l’espace autour d’elle change. Dose ensuite la réverbération. « Profondeur » éloigne la réverbération de ta voix : la voix reste nette devant, l’espace s’ouvre derrière. « S’efface pendant le chant » baisse la réverbération quand tu chantes et la laisse revenir entre les phrases. Écoute au casque, la différence est bien plus nette.</p>
 </div>
 <div class="card">
   <h2>Améliorations de la voix</h2>
@@ -386,26 +407,34 @@ const PARAMS = [
   {id:'double',  g:'plus', label:'Épaisseur',          min:0, max:100, step:1, unit:' %', def:0},
   {id:'voice',   g:'vol', label:'Voix (centre)',    min:-24, max:6,  step:0.5, unit:' dB', def:0},
   {id:'volume',  g:'master', label:'Volume général',   min:-24, max:6,  step:0.5, unit:' dB', def:0},
+  {id:'corps',   g:'timbre', label:'Corps',           min:-10, max:10, step:0.5, unit:' dB', def:0},
+  {id:'brill',   g:'timbre', label:'Brillance',       min:-10, max:10, step:0.5, unit:' dB', def:0},
+  {id:'inner',   g:'timbre', label:'Voix intérieure', min:0, max:100, step:1, unit:' %', def:0},
   {id:'warmth',  g:'col', label:'Chaleur (graves)', min:-12, max:12, step:0.5, unit:' dB', def:0},
   {id:'body',    g:'col', label:'Médium (corps)',   min:-12, max:12, step:0.5, unit:' dB', def:0},
   {id:'clarity', g:'col', label:'Clarté (aigus)',   min:-12, max:12, step:0.5, unit:' dB', def:0},
   {id:'soft',    g:'col', label:'Douceur (sifflantes)', min:0, max:100, step:1, unit:' %', def:0},
   {id:'comp',    g:'dyn', label:'Régularité',       min:0,   max:100,step:1,   unit:' %',  def:0},
   {id:'reverb',  g:'amb', label:'Réverbération',    min:0,   max:100,step:1,   unit:' %',  def:0},
-  {id:'revlen',  g:'amb', label:'Durée réverb.',    min:0.5, max:6,  step:0.1, unit:' s',  def:2},
+  {id:'revlen',  g:'amb', label:'Durée de la salle', min:0.5, max:8,  step:0.1, unit:' s',  def:2},
+  {id:'pre',     g:'amb', label:'Profondeur',        min:0, max:200, step:5, unit:' ms', def:0},
+  {id:'duck',    g:'amb', label:'S’efface pendant le chant', min:0, max:100, step:1, unit:' %', def:0},
   {id:'echo',    g:'amb', label:'Écho',             min:0,   max:100,step:1,   unit:' %',  def:0},
   {id:'echotime',g:'amb', label:'Espacement écho',  min:80,  max:800,step:10,  unit:' ms', def:350},
   {id:'echofb',  g:'amb', label:'Répétitions',      min:0,   max:85, step:1,   unit:' %',  def:30},
 ];
 const PRESETS = {
+  'Ma voix intérieure': {volume:0, inner:70, warmth:0, body:0, clarity:0, soft:0, comp:20, reverb:10, revlen:1.0, echo:0, echotime:300, echofb:20},
   'Feutré':    {volume:0, warmth:3, body:-1.5,clarity:-3, soft:60, comp:40, reverb:18, revlen:1.4, echo:0,  echotime:300, echofb:15},
   'Naturel':   {soft:0, volume:0, warmth:1, body:0, clarity:1.5, comp:25, reverb:12, revlen:1.2, echo:0,  echotime:300, echofb:20},
   'Intimiste': {soft:0, volume:0, warmth:4, body:-1,clarity:-2,  comp:40, reverb:20, revlen:1.0, echo:0,  echotime:250, echofb:15},
   'Pop':       {soft:0, volume:0, warmth:1, body:2, clarity:5,   comp:65, reverb:25, revlen:1.6, echo:15, echotime:280, echofb:25},
+  'Cathédrale': {volume:0, reverb:45, revlen:7, pre:90, duck:50},
   'Ballade':   {soft:0, volume:0, warmth:2, body:0, clarity:2,   comp:45, reverb:50, revlen:3.5, echo:25, echotime:450, echofb:40},
 };
 const state = {vmute:0,vsolo:0,mmute:0,msolo:0}; PARAMS.forEach(p=>state[p.id]=p.def);
-let tracks=[];   // pistes ajoutées : {id,name,buffer,vol,pan,mute,solo}
+let tracks=[];
+const T={n:10, active:false};   // test du timbre   // pistes ajoutées : {id,name,buffer,vol,pan,mute,solo}
 
 // ---------- Interface ----------
 const $ = id => document.getElementById(id);
@@ -428,23 +457,57 @@ function setState(obj){
   refreshMS(); applyAll();
 }
 function refreshMS(){ ['vmute','vsolo','mmute','msolo'].forEach(k=>{ const b=document.getElementById(k); if(b) b.classList.toggle('on',!!state[k]); }); }
-Object.keys(PRESETS).forEach(name=>{
-  const b=document.createElement('button'); b.textContent=name;
-  b.onclick=()=>{ document.querySelectorAll('#presets button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); setState(PRESETS[name]); };
-  $('presets').appendChild(b);
-});
+// chaque préréglage part d’une base neutre (couleur, dynamique, ambiance, voix intérieure) ; ton timbre (corps, brillance) est gardé
+const PRESET_BASE={}; ['warmth','body','clarity','soft','comp','reverb','revlen','pre','duck','echo','echotime','echofb','inner'].forEach(k=>PRESET_BASE[k]=PARAMS.find(p=>p.id===k).def);
+function loadMonTimbre(){ try{ return JSON.parse(localStorage.getItem('msv-mon-timbre')); }catch(e){ return null; } }
+function renderPresets(){
+  const box=$('presets'); box.innerHTML='';
+  const mt=loadMonTimbre(), list=Object.keys(PRESETS).map(n=>[n,{...PRESET_BASE,...PRESETS[n]}]);
+  if(mt) list.unshift(['Mon timbre',{...PRESET_BASE,volume:0,corps:mt.corps,brill:mt.brill}]);
+  list.forEach(([name,vals])=>{ const b=document.createElement('button'); b.textContent=name; b.dataset.name=name;
+    b.onclick=()=>{ document.querySelectorAll('#presets button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); setState(vals); };
+    box.appendChild(b); });
+}
+renderPresets();
 
 // ---------- Moteur audio ----------
 let ctx=null, buffer=null, src=null, startedAt=0, offset=0, playing=false, bypass=false;
 let chain=null, irLenBuilt=-1, sep=null, srcs=[], fileName='';
 
 function dB(x){ return Math.pow(10,x/20); }
-function makeIR(c, seconds){
-  const rate=c.sampleRate, len=Math.floor(rate*seconds), ir=c.createBuffer(2,len,rate);
-  for(let ch=0;ch<2;ch++){ const d=ir.getChannelData(ch);
-    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3); }
-  return ir;
+// Réverbération réaliste (reprise de la 4.8) : chaque lieu a son caractère, déduit de la durée.
+// Premières réflexions d’autant plus espacées que le lieu est grand, montée progressive du son diffus,
+// aigus qui s’éteignent plus vite que les graves, énergie qui grandit avec la taille du lieu.
+// Aléatoire « fixe » : l’écoute et l’export sonnent pareil. La voix directe n’est jamais modifiée.
+const IRC=new Map();
+function makeIR(c,len){ const k=c.sampleRate+'|'+len; let b=IRC.get(k); if(!b){ b=impulse(c,len); if(IRC.size>12) IRC.clear(); IRC.set(k,b); } return b; }
+function impulse(c,len){
+  const r=c.sampleRate, n=Math.floor(r*len), b=c.createBuffer(2,n,r),
+    atk=0.003+0.012*len, kEnd=Math.max(0.1,0.75-0.095*len), erSpan=Math.min(0.22,0.025+0.03*len), E=0.8*Math.pow(len,0.45);
+  for(let ch=0;ch<2;ch++){ const d=b.getChannelData(ch); let seed=9871+ch*4513, y=0; const rnd=()=>{ seed=(seed*1103515245+12345)>>>0; return seed/2147483648-1; };
+    for(let i=0;i<n;i++){ const t=i/r, k=0.9-(0.9-kEnd)*Math.min(1,i/n*1.5); y+=k*(rnd()-y); d[i]=y/Math.sqrt(k)*Math.exp(-6.9*t/len)*(1-Math.exp(-t/atk)); }
+    let et=0; for(let i=0;i<n;i++) et+=d[i]*d[i]; const gt=Math.sqrt(0.88/et); for(let i=0;i<n;i++) d[i]*=gt;
+    const NR=24; let er=[], ee=0; for(let j=0;j<NR;j++){ const t=erSpan*Math.pow((j+1+0.6*rnd())/NR,1.3), a=Math.exp(-3*t/erSpan)*(rnd()<0?-1:1); er.push([Math.floor(t*r),a]); ee+=a*a; }
+    const ge=Math.sqrt(0.12/ee); er.forEach(([p,a])=>{ if(p<n) d[p]+=a*ge; });
+    for(let i=0;i<n;i++) d[i]*=Math.sqrt(E); }
+  return b;
 }
+// Module audio : baisse la réverbération et l’écho pendant que tu chantes, puis les laisse revenir entre les phrases (4.8).
+// Chargé par une adresse « data: » pour fonctionner aussi quand l’application est ouverte depuis un fichier.
+const DUCK_SRC=`class Duck extends AudioWorkletProcessor{
+ static get parameterDescriptors(){return[{name:"amt",defaultValue:0,minValue:0,maxValue:1,automationRate:"k-rate"},{name:"ref",defaultValue:.1,minValue:1e-5,maxValue:1,automationRate:"k-rate"}]}
+ constructor(){super();const r=sampleRate,B=16,c=t=>1-Math.exp(-B/(t*r));this.k=0;this.dk=1;this.kA=c(.04);this.kR=c(.45);this.cT=c(.004)}
+ process(inp,out,p){const v=inp[0]||[],w=inp[1]||[],o=out[0],n=o[0].length,B=16,a=p.amt[0],ref=p.ref[0];
+  for(let b0=0;b0<n;b0+=B){let pk=0;for(let c=0;c<v.length;c++)for(let i=b0;i<b0+B;i++){const q=Math.abs(v[c][i]);if(q>pk)pk=q}
+   this.k+=(pk-this.k)*(pk>this.k?this.kA:this.kR);const lv=Math.min(1,this.k/(ref*.8+1e-6)),dt=1-a*.6*lv;this.dk+=(dt-this.dk)*this.cT;
+   for(let c=0;c<o.length;c++){const oc=o[c];if(!w.length){oc.fill(0,b0,b0+B);continue}const sw=w[Math.min(c,w.length-1)];for(let i=b0;i<b0+B;i++)oc[i]=sw[i]*this.dk}}
+  return true}}
+registerProcessor("duck",Duck);`;
+const DUCK_URL='data:application/javascript;base64,'+btoa(unescape(encodeURIComponent(DUCK_SRC)));
+const wkOK=new WeakSet();
+async function prepWK(c){ if(wkOK.has(c)) return true; try{ await c.audioWorklet.addModule(DUCK_URL); wkOK.add(c); return true; }catch(e){ return false; } }
+let voiceRef=0.1;   // niveau typique de la voix (sert au module qui efface la réverbération)
+function measureRef(b){ if(!b) return; const d=b.getChannelData(0), B=Math.floor(b.sampleRate*0.05), pk=[]; for(let i=0;i+B<=d.length;i+=B){ let m=0; for(let j=i;j<i+B;j+=2){ const x=Math.abs(d[j]); if(x>m) m=x; } if(m>0.003) pk.push(m); } if(pk.length){ pk.sort((x,y)=>x-y); voiceRef=pk[Math.floor(pk.length*0.6)]; } }
 // Construit la chaîne d'effets dans un contexte (temps réel ou export)
 function buildChain(c, s){
   const n={};
@@ -463,6 +526,10 @@ function buildChain(c, s){
   n.deess=c.createBiquadFilter(); n.deess.type='peaking'; n.deess.frequency.value=6500; n.deess.Q.value=1.4;
   n.air=c.createBiquadFilter(); n.air.type='lowpass'; n.air.Q.value=0.5;
   n.hp=c.createBiquadFilter(); n.hp.type='highpass'; n.hp.Q.value=0.707;
+  const bqf=(type,f,Q)=>{ const b=c.createBiquadFilter(); b.type=type; b.frequency.value=f; if(Q) b.Q.value=Q; return b; };
+  n.tLow=bqf('lowshelf',200); n.tMid=bqf('peaking',400,0.6); n.tHi=bqf('highshelf',3500); n.tPr=bqf('peaking',2500,0.8);   // mon timbre
+  n.iLow=bqf('lowshelf',180); n.iMid=bqf('peaking',450,0.8); n.iPr=bqf('peaking',3000,1); n.iHi=bqf('highshelf',7000);     // voix intérieure
+  n.match=c.createGain();   // égalisation de volume pendant le test du timbre
   n.pres=c.createBiquadFilter(); n.pres.type='peaking'; n.pres.frequency.value=3000; n.pres.Q.value=1;
   n.satIn=c.createGain(); n.satDry=c.createGain(); n.satWet=c.createGain(); n.satOut=c.createGain();
   n.shaper=c.createWaveShaper(); { const k=3, N=2048, cu=new Float32Array(N); for(let i=0;i<N;i++){ const x=i/(N-1)*2-1; cu[i]=Math.tanh(k*x)/Math.tanh(k); } n.shaper.curve=cu; n.shaper.oversample='4x'; }
@@ -478,19 +545,24 @@ function buildChain(c, s){
   n.limiter=c.createDynamicsCompressor(); n.limiter.threshold.value=-1.5; n.limiter.knee.value=0; n.limiter.ratio.value=20; n.limiter.attack.value=0.002; n.limiter.release.value=0.12;
   n.makeup=c.createGain();
   n.dry=c.createGain();
-  n.revSend=c.createGain(); n.conv=c.createConvolver();
+  n.revSend=c.createGain(); n.conv=c.createConvolver(); n.conv.normalize=false;
+  n.pd=c.createDelay(1); n.rvHp=c.createBiquadFilter(); n.rvHp.type='highpass'; n.rvHp.frequency.value=180; n.rvHp.Q.value=0.7;
+  n.rvLp=c.createBiquadFilter(); n.rvLp.type='lowpass'; n.rvLp.frequency.value=6500; n.rvLp.Q.value=0.7;
+  n.wetBus=c.createGain();
   n.echoSend=c.createGain(); n.delay=c.createDelay(2); n.fb=c.createGain(); n.echoTone=c.createBiquadFilter(); n.echoTone.type='lowpass'; n.echoTone.frequency.value=5000;
   n.processed=c.createGain();   // sortie traitée
   n.original=c.createGain();    // sortie originale (A/B)
   n.master=c.createGain();
 
-  n.input.connect(n.hp); n.hp.connect(n.low); n.low.connect(n.mid); n.mid.connect(n.pres); n.pres.connect(n.high); n.high.connect(n.deess); n.deess.connect(n.air); n.air.connect(n.satIn); n.satIn.connect(n.satDry); n.satIn.connect(n.shaper); n.shaper.connect(n.satWet); n.satDry.connect(n.satOut); n.satWet.connect(n.satOut); n.satOut.connect(n.comp); n.comp.connect(n.makeup);
+  n.input.connect(n.hp); n.hp.connect(n.tLow); n.tLow.connect(n.tMid); n.tMid.connect(n.tHi); n.tHi.connect(n.tPr); n.tPr.connect(n.iLow); n.iLow.connect(n.iMid); n.iMid.connect(n.iPr); n.iPr.connect(n.iHi); n.iHi.connect(n.low); n.low.connect(n.mid); n.mid.connect(n.pres); n.pres.connect(n.high); n.high.connect(n.deess); n.deess.connect(n.air); n.air.connect(n.satIn); n.satIn.connect(n.satDry); n.satIn.connect(n.shaper); n.shaper.connect(n.satWet); n.satDry.connect(n.satOut); n.satWet.connect(n.satOut); n.satOut.connect(n.comp); n.comp.connect(n.makeup);
   n.makeup.connect(n.dblSend); n.dblL.connect(n.processed); n.dblR.connect(n.processed);
   n.makeup.connect(n.dry); n.dry.connect(n.processed);
-  n.makeup.connect(n.revSend); n.revSend.connect(n.conv); n.conv.connect(n.processed);
-  n.makeup.connect(n.echoSend); n.echoSend.connect(n.delay); n.delay.connect(n.echoTone); n.echoTone.connect(n.fb); n.fb.connect(n.delay); n.echoTone.connect(n.processed);
+  n.makeup.connect(n.revSend); n.revSend.connect(n.pd); n.pd.connect(n.rvHp); n.rvHp.connect(n.conv); n.conv.connect(n.rvLp); n.rvLp.connect(n.wetBus);
+  n.makeup.connect(n.echoSend); n.echoSend.connect(n.delay); n.delay.connect(n.echoTone); n.echoTone.connect(n.fb); n.fb.connect(n.delay); n.echoTone.connect(n.wetBus);
+  n.duck=null; if(wkOK.has(c)){ try{ n.duck=new AudioWorkletNode(c,'duck',{numberOfInputs:2,numberOfOutputs:1,outputChannelCount:[2]}); }catch(e){ n.duck=null; } }
+  if(n.duck){ n.makeup.connect(n.duck,0,0); n.wetBus.connect(n.duck,0,1); n.duck.connect(n.processed); } else n.wetBus.connect(n.processed);
   n.pre.connect(n.original);
-  n.processed.connect(n.voiceBus); n.original.connect(n.voiceBus); n.voiceBus.connect(n.voicePan); n.voicePan.connect(n.mix);
+  n.processed.connect(n.match); n.match.connect(n.voiceBus); n.original.connect(n.voiceBus); n.voiceBus.connect(n.voicePan); n.voicePan.connect(n.mix);
   n.music.connect(n.musicBus); n.musicBus.connect(n.musicPan); n.musicPan.connect(n.mix);
   n.ceil=c.createGain(); n.ceil.gain.value=0.89;   // marge de sécurité de -1 dB après le limiteur
   n.mix.connect(n.master); n.master.connect(n.limiter); n.limiter.connect(n.ceil);
@@ -507,11 +579,14 @@ function setParams(n,s,c,instant){
   const k=s.comp/100;
   set(n.comp.threshold,-50*k); set(n.comp.ratio,1+11*k); set(n.comp.knee,10);
   set(n.makeup.gain,dB(14*k));
-  set(n.revSend.gain,(s.reverb/100)*1.2);
-  set(n.dry.gain,1-(s.reverb/100)*0.35);
+  set(n.revSend.gain,(s.reverb/100)*0.8); set(n.dry.gain,1); set(n.pd.delayTime,(s.pre||0)/1000);
+  if(n.duck){ n.duck.parameters.get('amt').value=(s.duck||0)/100; n.duck.parameters.get('ref').value=Math.max(1e-4,voiceRef); }
   set(n.echoSend.gain,(s.echo/100)*0.8);
   set(n.delay.delayTime,s.echotime/1000); set(n.fb.gain,s.echofb/100);
   set(n.master.gain,dB(s.volume)); set(n.voiceAdj.gain,(sep?0:dB(s.voice)-1)); set(n.voiceVol.gain,dB(s.vvol)); set(n.music.gain,dB(s.mvol));
+  set(n.tLow.gain,s.corps*0.8); set(n.tMid.gain,s.corps); set(n.tHi.gain,s.brill); set(n.tPr.gain,s.brill*0.5);
+  { const t=s.inner/100; set(n.iLow.gain,4*t); set(n.iMid.gain,5*t); set(n.iPr.gain,-3*t); set(n.iHi.gain,-6*t); }
+  set(n.match.gain, (c===ctx && T.active && T.gain)? T.gain : 1);
   set(n.hp.frequency,s.hpf); set(n.pres.gain,s.presence);
   const sk=s.sat/100; set(n.satDry.gain,1-0.6*sk); set(n.satWet.gain,0.6*sk*1.1); set(n.satIn.gain,1+sk*1.5); set(n.satOut.gain,1/(1+sk*0.9));
   set(n.dblSend.gain,0.55*s.double/100);
@@ -538,11 +613,11 @@ $('file').addEventListener('change', async e=>{
   stop();
   $('status').textContent='Décodage du fichier…';
   try{
-    if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); chain=buildChain(ctx,state); }
+    if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); await prepWK(ctx); chain=buildChain(ctx,state); }
     const data=await f.arrayBuffer();
     buffer=await ctx.decodeAudioData(data);
-    offset=0; fileName=f.name; clearSep(); $('sep').disabled=false; tuneReset();
-    ['play','stop','ab','seek','mixwav','mixmp3','stemswav','addtrack'].forEach(id=>$(id).disabled=false); $('strip-v-name').textContent='Morceau (voix + musique)';
+    offset=0; fileName=f.name; measureRef(buffer); clearSep(); $('sep').disabled=false; tuneReset();
+    ['play','stop','ab','seek','mixwav','mixmp3','stemswav','addtrack','testStart'].forEach(id=>$(id).disabled=false); $('strip-v-name').textContent='Morceau (voix + musique)';
     $('status').textContent=`Chargé : ${f.name} (${fmt(buffer.duration)}). Bouge les curseurs pendant la lecture.`;
     songKey=f.name+'|'+Math.round(buffer.duration); $('songsave').disabled=false; restoreSong();
     updateTime();
@@ -612,6 +687,75 @@ $('songlist').onchange=e=>{ const k=e.target.value; if(!k) return;
   else restoreSong(); };
 refreshSongList();
 
+// ---------- Lieux de réverbération (4.8) ----------
+const ROOMS={piece:{revlen:0.8,pre:10,reverb:30}, eglise:{revlen:3.5,pre:45,reverb:38}, cathedrale:{revlen:7,pre:90,reverb:45}};
+document.querySelectorAll('#rooms button').forEach(bt=>bt.onclick=()=>{
+  const R={...ROOMS[bt.dataset.room]}; if(state.duck<40 && R.revlen>2) R.duck=50;
+  setState(R); document.querySelectorAll('#rooms button').forEach(x=>x.classList.toggle('on',x===bt));
+  $('status').textContent='Lieu « '+bt.textContent+' » choisi. Ajuste la réverbération à ton goût, et compare avec l’original.';
+});
+
+// ---------- Test du timbre (repris de la 4.8) ----------
+function tMsg(t){ $('tMsg').textContent=t; }
+const tBtns=['tA','tB','tO','pA','pB','pS'];
+async function rmsFor(v,a,b){ // rend la voix seule sur le passage avec les réglages v, renvoie son niveau
+  const voice=sep? sep.voice : buffer, sr=voice.sampleRate, len=Math.max(1,Math.floor((b-a)*sr));
+  const off=new OfflineAudioContext(2,len,sr); await prepWK(off); const wasB=bypass; bypass=false; const n=buildChain(off,v); bypass=wasB;
+  n.voiceBus.gain.value=1; n.musicBus.gain.value=0;
+  const x=off.createBufferSource(); x.buffer=voice; x.connect(n.voiceVol); x.start(0,a,b-a);
+  const r=await off.startRendering(); let t=0,c=0; for(let ch=0;ch<2;ch++){ const d=r.getChannelData(ch); for(let i=0;i<d.length;i+=4){ t+=d[i]*d[i]; c++; } }
+  return Math.sqrt(t/Math.max(1,c));
+}
+async function tRound(){
+  const dim=T.i%2===0?'corps':'brill', st=T.step[dim];
+  const lo={...T.est}, hi={...T.est}; lo[dim]=Math.max(-10,T.est[dim]-st); hi[dim]=Math.min(10,T.est[dim]+st);
+  if(hi[dim]-lo[dim]<2*st){ if(lo[dim]===-10) hi[dim]=Math.min(10,lo[dim]+2*st); else lo[dim]=Math.max(-10,hi[dim]-2*st); }
+  T.dim=dim; const sw=Math.random()<0.5; T.A=sw?hi:lo; T.B=sw?lo:hi;
+  $('tStep').textContent='Choix '+(T.i+1)+' / '+T.n; $('tProg').value=T.i;
+  tBtns.forEach(i=>$(i).disabled=true); tMsg('Préparation des deux versions…');
+  const [a,b]=T.loop, base={...state,...T.saved};
+  const ref=await rmsFor({...base,corps:0,brill:0},a,b), rA=await rmsFor({...base,...T.A},a,b), rB=await rmsFor({...base,...T.B},a,b);
+  const g=r=> (r>1e-6&&ref>1e-6)? Math.min(4,Math.max(0.25,ref/r)) : 1;
+  T.gA=g(rA); T.gB=g(rB);
+  if(!T.active) return;
+  tBtns.forEach(i=>$(i).disabled=false); tMsg('Écoute A et B, puis choisis.'); tListen('A');
+}
+function tListen(w){
+  ['tA','tB','tO'].forEach(i=>$(i).classList.remove('on'));
+  if(w==='O'){ $('tO').classList.add('on'); bypass=true; T.gain=1; }
+  else { $('t'+w).classList.add('on'); bypass=false; const p=T[w]; state.corps=p.corps; state.brill=p.brill; T.gain= w==='A'? T.gA : T.gB; }
+  $('ab').classList.toggle('on',bypass); $('ab').textContent=bypass?'Écouter le résultat':'Écouter l’original';
+  applyAll(); if(!playing) play();
+}
+function tPick(w){
+  const dim=T.dim;
+  if(w==='S') T.step[dim]=Math.min(8,T.step[dim]*1.5);
+  else { T.est[dim]=T[w][dim]; T.step[dim]=Math.max(2.5,T.step[dim]*0.75); }
+  T.i++; if(T.i>=T.n) tEnd(); else tRound();
+}
+function tClose(){ T.active=false; T.gain=1; T.loop=null; bypass=false; $('ab').classList.remove('on'); $('ab').textContent='Écouter l’original'; $('testBox').style.display='none'; $('testIntro').style.display=''; }
+function tEnd(){
+  const c=Math.round(T.est.corps*2)/2, b=Math.round(T.est.brill*2)/2;
+  try{ localStorage.setItem('msv-mon-timbre',JSON.stringify({corps:c,brill:b})); }catch(e){}
+  const was=playing; if(was) pause(); tClose(); renderPresets();
+  const btn=document.querySelector('#presets button[data-name="Mon timbre"]'); if(btn) btn.click(); else setState({corps:c,brill:b});
+  const d=v=>(v>0?'+':'')+String(v).replace('.',',')+' dB';
+  $('status').textContent='Test terminé. Préréglage « Mon timbre » créé : corps '+d(c)+', brillance '+d(b)+'. Compare-le avec l’original.';
+  tMsg(''); if(was) play();
+}
+$('testStart').onclick=()=>{
+  if(!buffer) return;
+  const s0=Math.min(curPos(), Math.max(0,buffer.duration-20));
+  T.loop=[s0, Math.min(buffer.duration, s0+20)]; T.i=0; T.est={corps:0,brill:0}; T.step={corps:6,brill:6};
+  T.saved={corps:state.corps, brill:state.brill}; T.active=true; T.gain=1;
+  $('testIntro').style.display='none'; $('testBox').style.display=''; if(playing){ pause(); offset=T.loop[0]; }
+  else offset=T.loop[0];
+  tRound();
+};
+$('tA').onclick=()=>tListen('A'); $('tB').onclick=()=>tListen('B'); $('tO').onclick=()=>tListen('O');
+$('pA').onclick=()=>tPick('A'); $('pB').onclick=()=>tPick('B'); $('pS').onclick=()=>tPick('S');
+$('tStop').onclick=()=>{ const was=playing; if(was) pause(); state.corps=T.saved.corps; state.brill=T.saved.brill; tClose(); setState({corps:state.corps,brill:state.brill}); if(was) play(); $('status').textContent='Test arrêté.'; };
+
 // ---------- Voix d’origine commune (recalage + justesse, non destructif) ----------
 let vOrig=null;                 // {kind:'sep'|'buf', buf} : la voix telle qu’importée ou séparée
 function ensureVOrig(){ const kind=sep?'sep':'buf'; if(!vOrig||vOrig.kind!==kind) vOrig={kind, buf: kind==='sep'? sep.voice : buffer}; return vOrig; }
@@ -624,7 +768,7 @@ const parseT=v=>{ v=String(v).trim().replace(',','.'); if(v.includes(':')){ cons
 function rcHas(){ return !!buffer && (!!sep || tracks.length>0); }
 function rcSel(){ const D=buffer?buffer.duration:0; let a=Math.max(0,Math.min(parseT($('rcA').value),D)), b=Math.max(0,Math.min(parseT($('rcB').value),D)); if(b<a){ const t=a; a=b; b=t; } if(b<a+0.5){ b=Math.min(D,a+0.5); if(b<a+0.5) a=Math.max(0,b-0.5); } return [a,b]; }
 function rcScope(){ return document.querySelector('input[name=rcScope]:checked').value; }
-function loopRange(){ return (buffer && $('rcLoop') && $('rcLoop').checked && rcHas())? rcSel() : null; }
+function loopRange(){ if(T.active && T.loop) return T.loop; return (buffer && $('rcLoop') && $('rcLoop').checked && rcHas())? rcSel() : null; }
 function rcPending(){ const sh=state.rcshift/1000; if(!sh) return null; if(rcScope()==='all') return {all:true,s:sh}; const [a,b]=rcSel(); return {a,b,s:sh}; }
 function recalApply(base){
   const list=rcEdits.slice(), p=rcPending(); if(p) list.push(p);
@@ -729,7 +873,7 @@ $('addtrack').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return;
   mixMsg('Chargement de la piste…');
   try{
-    if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); chain=buildChain(ctx,state); }
+    if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); await prepWK(ctx); chain=buildChain(ctx,state); }
     const b=await ctx.decodeAudioData(await f.arrayBuffer());
     const was=playing; if(was) pause();
     tracks.push({id:Date.now(),name:f.name.replace(/\.[^.]+$/,''),buffer:b,vol:0,pan:0,mute:false,solo:false});
@@ -906,7 +1050,7 @@ function onWorker(e){
     const n=d.vL.length, voice=ctx.createBuffer(2,n,44100), music=ctx.createBuffer(2,n,44100);
     voice.copyToChannel(d.vL,0); voice.copyToChannel(d.vR,1); music.copyToChannel(d.mL,0); music.copyToChannel(d.mR,1);
     const wasPlaying=playing; if(wasPlaying) pause();
-    sep={voice,music}; tuneReset(); $('strip-m').style.display=''; $('strip-v-name').textContent='Voix';
+    sep={voice,music}; measureRef(voice); tuneReset(); $('strip-m').style.display=''; $('strip-v-name').textContent='Voix';
      $('dlv').disabled=false; $('dlm').disabled=false; $('mp3').disabled=false; $('sepbar').value=1;
     const secs=Math.round((Date.now()-job.t0)/1000), mode=job.mode; endJob();
     sepMsg('Séparation terminée en '+(secs>=120? Math.round(secs/60)+' min':secs+' s')+'. Règle la voix et la musique dans la table de mixage. '+(mode==='lead'?'Les chœurs sont dans la piste musique. ':'')+'Les effets s’appliquent maintenant à la voix seule.');
@@ -947,7 +1091,7 @@ async function renderMix(o){
   let dur=0; if(o.voice||o.music) dur=sep? Math.max(sep.voice.duration,sep.music.duration) : buffer.duration;
   (o.tracks||[]).forEach(t=>dur=Math.max(dur,t.buffer.duration));
   const off=new OfflineAudioContext(2, Math.ceil((dur+tail)*rate), rate);
-  const wasBypass=bypass; bypass=false; const n=buildChain(off,state); bypass=wasBypass;
+  await prepWK(off); const wasBypass=bypass; bypass=false; const n=buildChain(off,state); bypass=wasBypass;
   const add=(b,d)=>{ const x=off.createBufferSource(); x.buffer=b; x.connect(d); x.start(); };
   if(sep){ if(o.voice) add(sep.voice,n.voiceVol); if(o.music) add(sep.music,n.music); } else if(o.voice||o.music) add(buffer,n.voiceVol);
   n.trk=(o.tracks||[]).map(t=>{ const g=off.createGain(), pn=off.createStereoPanner(); g.connect(pn); pn.connect(n.mix); add(t.buffer,g); return {t,g,p:pn}; });
