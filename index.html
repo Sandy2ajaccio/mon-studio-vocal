@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal"><title>Mon Studio Vocal 5.5 bêta</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal"><title>Mon Studio Vocal 5.6 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -37,7 +37,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.5 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.6 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -49,6 +49,10 @@
     <button id="stop" disabled>■ Arrêt</button>
     <button id="ab" disabled>Écouter l’original</button>
     <span id="time">00:00 / 00:00</span>
+  </div>
+  <div id="loopInfo" class="row" style="display:none;margin-top:8px;padding:6px 10px;background:#f3ecfb;border:1px solid #d9c6f0;border-radius:8px;align-items:center">
+    <span id="loopTxt" style="font-size:.9rem;color:#5a2d82"></span>
+    <button id="loopOff" class="primary">Écouter le morceau en entier</button>
   </div>
   <input type="range" class="seek" id="seek" min="0" max="1000" value="0" disabled>
   <div id="status">Importe un fichier audio (MP3, WAV…).</div>
@@ -108,7 +112,7 @@
   <p id="rcNeed" style="margin:0;color:#666;font-size:.9rem">Pour recaler ta voix sur la musique, il faut deux pistes : sépare ton morceau (section ci-dessus) ou ajoute l’accompagnement dans la table de mixage.</p>
   <div id="rcCtl" style="display:none">
     <p style="margin:0 0 6px;color:#666;font-size:.85rem">1. Choisis la phrase à recaler en glissant sur l’onde, avec <b>un peu de silence avant et après</b>. 2. Écoute en boucle et décale ta voix jusqu’à ce qu’elle tombe sur le temps. La musique ne bouge pas.</p>
-    <canvas id="rcWave" height="90" style="width:100%;height:90px;background:#faf8fc;border:1px solid var(--line);border-radius:8px;cursor:crosshair;touch-action:none"></canvas>
+    <canvas id="rcWave" height="90" style="width:100%;height:90px;background:#faf8fc;border:1px solid var(--line);border-radius:8px;cursor:crosshair;touch-action:pan-y"></canvas>
     <div class="row" style="margin-top:6px">
       <label>Début <input id="rcA" class="num" style="width:76px" type="text" inputmode="decimal" value="0:00,0"></label>
       <label>Fin <input id="rcB" class="num" style="width:76px" type="text" inputmode="decimal" value="0:05,0"></label>
@@ -844,12 +848,19 @@ $('rcClear').onclick=()=>{ rcEdits=[]; state.rcshift=0; $('s-rcshift').value=0; 
 // sélection à la souris ou au doigt sur l’onde
 { const cv=$('rcWave'), tAt=e=>{ const r=cv.getBoundingClientRect(); return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*(buffer?buffer.duration:0); };
   cv.addEventListener('pointerdown',e=>{ if(!buffer) return; try{ cv.setPointerCapture(e.pointerId); }catch(_){} rcDrag={x0:e.clientX,t0:tAt(e)}; });
-  cv.addEventListener('pointermove',e=>{ if(!rcDrag) return; if(Math.abs(e.clientX-rcDrag.x0)>4){ const t=tAt(e); $('rcA').value=fmtD(Math.min(rcDrag.t0,t)); $('rcB').value=fmtD(Math.max(rcDrag.t0,t)); document.querySelector('input[name=rcScope][value=part]').checked=true; rcUI(); } });
-  cv.addEventListener('pointerup',e=>{ if(!rcDrag) return; const moved=Math.abs(e.clientX-rcDrag.x0)>4, t=tAt(e); rcDrag=null;
+  cv.addEventListener('pointermove',e=>{ if(!rcDrag) return; if(Math.abs(e.clientX-rcDrag.x0)>12){ const t=tAt(e); $('rcA').value=fmtD(Math.min(rcDrag.t0,t)); $('rcB').value=fmtD(Math.max(rcDrag.t0,t)); document.querySelector('input[name=rcScope][value=part]').checked=true; rcUI(); } });
+  cv.addEventListener('pointerup',e=>{ if(!rcDrag) return; const moved=Math.abs(e.clientX-rcDrag.x0)>12, t=tAt(e); rcDrag=null;
     if(moved){ $('rcLoop').checked=true; offset=rcSel()[0]; loopChanged(); rcChanged(); }
     else { const was=playing; if(was) pause(); offset=t; updateTime(); if(was) play(); drawWave(); } });
+  cv.addEventListener('pointercancel',()=>{ rcDrag=null; });   // le doigt fait défiler la page : pas de sélection
 }
 setInterval(()=>{ if(playing && rcHas()) drawWave(); },120);
+// ---------- Indicateur de boucle ----------
+function loopInfo(){ const L=buffer? loopRange() : null, box=$('loopInfo'); if(!L){ if(box.style.display!=='none') box.style.display='none'; return; }
+  const t=(T.active&&T.loop? 'Test du timbre : lecture en boucle de ' : 'Lecture en boucle de ')+fmtD(L[0])+' à '+fmtD(L[1])+'.';
+  if($('loopTxt').textContent!==t) $('loopTxt').textContent=t; if(box.style.display==='none') box.style.display='flex'; }
+$('loopOff').onclick=()=>{ if(T.active) tClose(); $('rcLoop').checked=false; document.querySelector('input[name=rcScope][value=all]').checked=true; loopChanged(); loopInfo(); };
+setInterval(loopInfo,300);
 window.addEventListener('resize',()=>drawWave());
 
 // ---------- Table de mixage ----------
