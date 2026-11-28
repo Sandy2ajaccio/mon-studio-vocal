@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="importmap">{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/ort.webgpu.min.mjs"}}</script>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal"><title>Mon Studio Vocal 5.6 bêta</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#6a3df0"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Studio Vocal"><title>Mon Studio Vocal 5.7 bêta</title>
 <style>
   :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--muted:#666;--acc:#7a3e9d;--line:#ddd}
   *{box-sizing:border-box}
@@ -37,7 +37,7 @@
 </head>
 <body>
 <main>
-<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.6 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
+<h1>Mon Studio Vocal <small style="font-size:.8rem;color:#666;font-weight:normal">version 5.7 bêta · <a href="v4-8/" style="color:#7a3e9d">ancienne version 4.8</a></small></h1>
 
 <div class="card">
   <h2>Ma prise</h2>
@@ -49,6 +49,10 @@
     <button id="stop" disabled>■ Arrêt</button>
     <button id="ab" disabled>Écouter l’original</button>
     <span id="time">00:00 / 00:00</span>
+  </div>
+  <div id="volWarn" class="row" style="display:none;margin-top:8px;padding:6px 10px;background:#fff4e0;border:1px solid #f0c98a;border-radius:8px;align-items:center">
+    <span id="volTxt" style="font-size:.9rem;color:#7a4b00"></span>
+    <button id="volFix" class="primary">Remettre les volumes à 0 dB et au centre</button>
   </div>
   <div id="loopInfo" class="row" style="display:none;margin-top:8px;padding:6px 10px;background:#f3ecfb;border:1px solid #d9c6f0;border-radius:8px;align-items:center">
     <span id="loopTxt" style="font-size:.9rem;color:#5a2d82"></span>
@@ -437,7 +441,7 @@ const PRESETS = {
   'Naturel':   {soft:0, volume:0, warmth:1, body:0, clarity:1.5, comp:25, reverb:12, revlen:1.2, echo:0,  echotime:300, echofb:20},
   'Intimiste': {soft:0, volume:0, warmth:4, body:-1,clarity:-2,  comp:40, reverb:20, revlen:1.0, echo:0,  echotime:250, echofb:15},
   'Pop':       {soft:0, volume:0, warmth:1, body:2, clarity:5,   comp:65, reverb:25, revlen:1.6, echo:15, echotime:280, echofb:25},
-  'Cathédrale': {volume:0, reverb:45, revlen:7, pre:90, duck:50},
+  'Cathédrale': {volume:0, reverb:70, revlen:7, pre:90, duck:25},
   'Ballade':   {soft:0, volume:0, warmth:2, body:0, clarity:2,   comp:45, reverb:50, revlen:3.5, echo:25, echotime:450, echofb:40},
 };
 const state = {vmute:0,vsolo:0,mmute:0,msolo:0}; PARAMS.forEach(p=>state[p.id]=p.def);
@@ -712,11 +716,11 @@ $('songlist').onchange=e=>{ const k=e.target.value; if(!k) return;
 refreshSongList();
 
 // ---------- Lieux de réverbération (4.8) ----------
-const ROOMS={piece:{revlen:0.8,pre:10,reverb:30}, eglise:{revlen:3.5,pre:45,reverb:38}, cathedrale:{revlen:7,pre:90,reverb:45}};
+const ROOMS={piece:{revlen:0.8,pre:10,reverb:30}, eglise:{revlen:3.5,pre:45,reverb:50}, cathedrale:{revlen:7,pre:90,reverb:70}};
 document.querySelectorAll('#rooms button').forEach(bt=>bt.onclick=()=>{
-  const R={...ROOMS[bt.dataset.room]}; if(state.duck<40 && R.revlen>2) R.duck=50;
+  const R={...ROOMS[bt.dataset.room]}; R.duck= R.revlen>2? 25 : 0;   // s’efface un peu pendant le chant, sans cacher la salle
   setState(R); document.querySelectorAll('#rooms button').forEach(x=>x.classList.toggle('on',x===bt));
-  $('status').textContent='Lieu « '+bt.textContent+' » choisi. Ajuste la réverbération à ton goût, et compare avec l’original.';
+  $('status').textContent='Lieu « '+bt.textContent+' » choisi (réverbération '+R.reverb+' %, durée '+String(R.revlen).replace('.',',')+' s)'+(sep?'':' : elle s’applique à tout le morceau ; sépare la voix pour ne la mettre que sur ta voix')+'. Ajuste à ton goût et compare avec l’original.';
 });
 
 // ---------- Test du timbre (repris de la 4.8) ----------
@@ -861,6 +865,16 @@ function loopInfo(){ const L=buffer? loopRange() : null, box=$('loopInfo'); if(!
   if($('loopTxt').textContent!==t) $('loopTxt').textContent=t; if(box.style.display==='none') box.style.display='flex'; }
 $('loopOff').onclick=()=>{ if(T.active) tClose(); $('rcLoop').checked=false; document.querySelector('input[name=rcScope][value=all]').checked=true; loopChanged(); loopInfo(); };
 setInterval(loopInfo,300);
+function volWarn(){ const w=[]; const f=x=>String(x).replace('.',',');
+  if(state.volume<=-12) w.push('Volume général à '+f(state.volume)+' dB');
+  if(state.vvol<=-15) w.push('volume de la voix à '+f(state.vvol)+' dB');
+  if(sep && state.mvol<=-15) w.push('volume de la musique à '+f(state.mvol)+' dB');
+  if(Math.abs(state.vpan)>=80) w.push('voix toute à '+(state.vpan<0?'gauche':'droite'));
+  if(sep && Math.abs(state.mpan)>=80) w.push('musique toute à '+(state.mpan<0?'gauche':'droite'));
+  const box=$('volWarn'); if(!buffer||!w.length){ if(box.style.display!=='none') box.style.display='none'; return; }
+  const t='Le son risque d’être très faible ou d’un seul côté : '+w.join(', ')+'.'; if($('volTxt').textContent!==t) $('volTxt').textContent=t; if(box.style.display==='none') box.style.display='flex'; }
+$('volFix').onclick=()=>{ setState({volume:0,vvol:0,mvol:0,vpan:0,mpan:0}); volWarn(); $('status').textContent='Volumes remis à 0 dB et au centre.'; };
+setInterval(volWarn,500);
 window.addEventListener('resize',()=>drawWave());
 
 // ---------- Table de mixage ----------
@@ -1145,12 +1159,28 @@ function cleanSep(voice,music){
   let mus=music; if(gm<-0.1){ mus=new AudioBuffer({numberOfChannels:music.numberOfChannels,length:music.length,sampleRate:music.sampleRate}); const km=Math.pow(10,gm/20); for(let c=0;c<music.numberOfChannels;c++){ const x=new Float32Array(music.getChannelData(c)); for(let i=0;i<x.length;i++) x[i]*=km; mus.copyToChannel(x,c); } }
   return { voice:out, music:mus, gv, gm };
 }
+
+function sepLevel(){
+  const orig=(vOrig&&vOrig.kind==='buf')? vOrig.buf : buffer; if(!orig||!sep) return 0;
+  const ms=(arr)=>{ let e=0,c=0; for(const d of arr){ for(let i=0;i<d.length;i+=2){ e+=d[i]*d[i]; c++; } } return e/Math.max(1,c); };
+  const och=[]; for(let c=0;c<orig.numberOfChannels;c++) och.push(orig.getChannelData(c));
+  const V=[sep.voice.getChannelData(0),sep.voice.getChannelData(sep.voice.numberOfChannels-1)], M=[sep.music.getChannelData(0),sep.music.getChannelData(sep.music.numberOfChannels-1)];
+  const n=Math.min(V[0].length,M[0].length); let e=0,c=0, pv=0, pm=0;
+  for(let k=0;k<2;k++) for(let i=0;i<n;i+=2){ const x=V[k][i]+M[k][i]; e+=x*x; c++; }
+  for(const d of V) for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pv) pv=a; }
+  for(const d of M) for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pm) pm=a; }
+  const want=10*Math.log10(ms(och)/Math.max(1e-12,e/c)), room=20*Math.log10(0.98/Math.max(pv,pm,1e-6));
+  const g=Math.max(0,Math.min(9,want,room)); if(g<0.1) return 0;
+  const k=Math.pow(10,g/20), sc=b=>{ const o=new AudioBuffer({numberOfChannels:b.numberOfChannels,length:b.length,sampleRate:b.sampleRate}); for(let c=0;c<b.numberOfChannels;c++){ const x=new Float32Array(b.getChannelData(c)); for(let i=0;i<x.length;i++) x[i]*=k; o.copyToChannel(x,c); } return o; };
+  sep={voice:sc(sep.voice), music:sc(sep.music)}; return g;
+}
 function buildSep(){
   if(!sepRaw) return '';
   if(!$('sepclean').checked){ sep={voice:sepRaw.voice, music:sepRaw.music}; return 'Voix laissée telle que sortie de l’IA.'; }
   const r=cleanSep(sepRaw.voice,sepRaw.music); sep={voice:r.voice, music:r.music};
+  const gc=sepLevel();   // les deux pistes ensemble remises au niveau du morceau d’origine
   const f=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1).replace('.',',')+' dB';
-  return 'Voix nettoyée et remontée de '+f(r.gv)+(r.gm<-0.1? ' (musique baissée de '+f(r.gm).slice(1)+' pour éviter la saturation)':'')+'.';
+  return 'Voix nettoyée et remontée de '+f(r.gv)+(r.gm<-0.1? ' (musique baissée de '+f(r.gm).slice(1)+')':'')+(gc>0.1? ', puis voix et musique remontées ensemble de '+f(gc)+' pour retrouver le volume du morceau':'')+'.';
 }
 $('sepclean').addEventListener('change',()=>{ if(!sepRaw||job) return; const was=playing; if(was) pause(); const t=buildSep(); measureRef(sep.voice); tuneReset(); if(was) play(); sepMsg(t+' (la correction des notes et le recalage sont à refaire).'); });
 $('sep').onclick=async ()=>{
